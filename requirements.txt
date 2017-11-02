@@ -4,4 +4,11 @@ jupyter
 numpy
 scipy
 sklearn
+cached-property
 tqdm
+tensorflow
+keras
+gensim
+
+http://download.pytorch.org/whl/torch-0.2.0.post3-cp36-cp36m-macosx_10_7_x86_64.whl
+torchvision
