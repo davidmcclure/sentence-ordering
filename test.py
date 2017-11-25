@@ -73,7 +73,7 @@ class Sentence:
         return [vectors[t] for t in self.tokens if t in vectors]
 
 
-train = Corpus('./data/train.json/*.json', 100)
+train = Corpus('./data/train.json/*.json', 10000)
 train_x, train_y = zip(*train.xy())
 train_x = pad_sequences(train_x, 50, padding='post', dtype=float)
 train_y = list(train_y)
@@ -85,7 +85,7 @@ model.compile(loss='mean_squared_error', optimizer='adam')
 
 model.fit(train_x, train_y, batch_size=10)
 
-dev = Corpus('./data/dev.json/*.json', 10)
+dev = Corpus('./data/dev.json/*.json', 20000)
 dev_x, dev_y = zip(*train.xy())
 dev_x = pad_sequences(dev_x, 50, padding='post', dtype=float)
 dev_y = list(dev_y)
