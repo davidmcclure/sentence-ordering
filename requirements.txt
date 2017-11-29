@@ -18,3 +18,4 @@ textblob
 matplotlib
 click
 gnuplotlib
+ujson
