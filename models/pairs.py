@@ -7,7 +7,6 @@ import torch
 import ujson
 import numpy as np
 
-from dotenv import find_dotenv, load_dotenv
 from gensim.models import KeyedVectors
 from boltons.iterutils import pairwise, chunked_iter
 from tqdm import tqdm
@@ -21,13 +20,10 @@ from torch.nn import functional as F
 from torch.autograd import Variable
 
 
-load_dotenv(find_dotenv())
-
-
-def load_vectors():
+def load_vectors(path):
     print('Loading vectors...')
     global vectors
-    vectors = KeyedVectors.load(os.environ['VECTORS_PATH'])
+    vectors = KeyedVectors.load(path)
 
 
 class Corpus:
@@ -149,14 +145,16 @@ class Model(nn.Module):
 @click.command()
 @click.argument('train_path', type=click.Path())
 @click.argument('test_path', type=click.Path())
+@click.argument('vectors_path', type=click.Path())
 @click.option('--train_skim', type=int, default=10000)
 @click.option('--test_skim', type=int, default=1000)
 @click.option('--lr', type=float, default=1e-2)
 @click.option('--epochs', type=int, default=10)
 @click.option('--batch_size', type=int, default=50)
-def main(train_path, test_path, train_skim, test_skim, lr, epochs, batch_size):
+def main(train_path, test_path, vectors_path, train_skim, test_skim,
+    lr, epochs, batch_size):
 
-    load_vectors()
+    load_vectors(vectors_path)
 
     # TRAIN
 
