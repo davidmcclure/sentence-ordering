@@ -20,6 +20,10 @@ from torch.nn import functional as F
 from torch.autograd import Variable
 
 
+cuda = bool(os.environ.get('CUDA'))
+dtype = torch.cuda.FloatTensor if cuda else torch.FloatTensor
+
+
 def load_vectors(path):
     print('Loading vectors...')
     global vectors
@@ -61,7 +65,8 @@ class Abstract:
         return cls([Sentence(s['token']) for s in raw['sentences']])
 
     def tensor(self):
-        return torch.stack([s.tensor() for s in self.sentences])
+        tensors = [s.tensor() for s in self.sentences]
+        return torch.stack(tensors)
 
 
 @attr.s
@@ -87,7 +92,7 @@ class AbstractBatch:
 
     def tensor(self):
         tensors = [a.tensor() for a in self.abstracts]
-        return torch.cat(tensors)
+        return torch.cat(tensors).type(dtype)
 
     def xy(self, encoded_sents):
 
@@ -108,7 +113,10 @@ class AbstractBatch:
 
             start += len(ab.sentences)
 
-        return torch.stack(x), torch.FloatTensor(y)
+        x = torch.stack(x).type(dtype)
+        y = torch.FloatTensor(y).type(dtype)
+
+        return x, y
 
 
 class SentenceEncoder(nn.Module):
@@ -119,8 +127,8 @@ class SentenceEncoder(nn.Module):
         self.lstm = nn.LSTM(embed_dim, lstm_dim, batch_first=True)
 
     def forward(self, x):
-        h0 = Variable(torch.zeros(1, len(x), self.lstm_dim))
-        c0 = Variable(torch.zeros(1, len(x), self.lstm_dim))
+        h0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(dtype))
+        c0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(dtype))
         _, (hn, cn) = self.lstm(x, (h0, c0))
         return hn
 
@@ -163,6 +171,10 @@ def main(train_path, test_path, vectors_path, train_skim, test_skim,
 
     sent_encoder = SentenceEncoder()
     model = Model()
+
+    if cuda:
+        sent_encoder.cuda()
+        model.cuda()
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     criterion = nn.BCELoss()
@@ -219,7 +231,7 @@ def main(train_path, test_path, vectors_path, train_skim, test_skim,
         yp += y_pred.round().data.type(torch.ByteTensor).tolist()
 
     print(classification_report(yt, yp))
-    print('Accruracy: %f' % accuracy_score(yt, yp))
+    print('Accuracy: %f' % accuracy_score(yt, yp))
 
 
 if __name__ == '__main__':
