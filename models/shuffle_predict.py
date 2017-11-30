@@ -87,7 +87,7 @@ class AbstractBatch:
 
     def tensor(self):
         tensors = [a.tensor() for a in self.abstracts]
-        return torch.cat(tensors).type(dtype)
+        return torch.cat(tensors)
 
     def unpack_encoded_batch(self, batch):
         start = 0
@@ -176,9 +176,9 @@ def main(train_path, vectors_path, train_skim, lr, epochs, batch_size):
     criterion = nn.BCELoss()
 
     train_loss = []
-    for epoch in range(20):
+    for epoch in range(epochs):
 
-        print(f'Epoch {epoch}')
+        print(f'\nEpoch {epoch}')
 
         epoch_loss = 0
         for batch in train.batches(50):
@@ -188,8 +188,8 @@ def main(train_path, vectors_path, train_skim, lr, epochs, batch_size):
 
             x, y = zip(*batch.xy(sents.squeeze()))
 
-            x = torch.stack(x)
-            y = torch.stack(y).view(-1)
+            x = torch.stack(x).type(dtype)
+            y = torch.stack(y).view(-1).type(dtype)
 
             y_pred = model(x)
 
