@@ -190,7 +190,7 @@ def main(train_path, vectors_path, train_skim, lr, epochs,
         print(f'\nEpoch {epoch}')
 
         epoch_loss = 0
-        for batch in train.batches(50):
+        for i, batch in enumerate(train.batches(50)):
 
             sents = Variable(batch.tensor()).type(ftype)
             sents = sent_encoder(sents)
@@ -208,6 +208,9 @@ def main(train_path, vectors_path, train_skim, lr, epochs,
             optimizer.step()
 
             epoch_loss += loss.data[0]
+
+            if i == 0:
+                print(y_pred, y)
 
         epoch_loss /= len(train.abstracts)
         train_loss.append(epoch_loss)
