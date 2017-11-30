@@ -22,7 +22,9 @@ from torch.autograd import Variable
 
 
 cuda = bool(os.environ.get('CUDA'))
-dtype = torch.cuda.FloatTensor if cuda else torch.FloatTensor
+
+ftype = torch.cuda.FloatTensor if cuda else torch.FloatTensor
+itype = torch.cuda.LongTensor if cuda else torch.LongTensor
 
 
 def load_vectors(path):
@@ -103,10 +105,10 @@ class AbstractBatch:
 
             pad_len = maxlen-len(sents)
             pad_dim = sents.data.shape[1]
-
             zeros = Variable(torch.zeros(pad_len, pad_dim))
 
-            shuffled_sents = sents[torch.randperm(len(sents))]
+            shuffle = torch.randperm(len(sents)).type(itype)
+            shuffled_sents = sents[shuffle]
 
             yield (
                 torch.cat([zeros, sents]),
@@ -127,8 +129,8 @@ class SentenceEncoder(nn.Module):
         self.lstm = nn.LSTM(300, lstm_dim, batch_first=True)
 
     def forward(self, x):
-        h0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(dtype))
-        c0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(dtype))
+        h0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(ftype))
+        c0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(ftype))
         _, (hn, cn) = self.lstm(x, (h0, c0))
         return hn
 
@@ -142,8 +144,8 @@ class Model(nn.Module):
         self.out = nn.Linear(lstm_dim, 1)
 
     def forward(self, x):
-        h0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(dtype))
-        c0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(dtype))
+        h0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(ftype))
+        c0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(ftype))
         _, (hn, cn) = self.lstm(x, (h0, c0))
         y = F.sigmoid(self.out(hn))
         return y.view(len(x))
@@ -183,13 +185,13 @@ def main(train_path, vectors_path, train_skim, lr, epochs, batch_size):
         epoch_loss = 0
         for batch in train.batches(50):
 
-            sents = Variable(batch.tensor()).type(dtype)
+            sents = Variable(batch.tensor()).type(ftype)
             sents = sent_encoder(sents)
 
             x, y = zip(*batch.xy(sents.squeeze()))
 
-            x = torch.stack(x).type(dtype)
-            y = torch.stack(y).view(-1).type(dtype)
+            x = torch.stack(x).type(ftype)
+            y = torch.stack(y).view(-1).type(ftype)
 
             y_pred = model(x)
 
