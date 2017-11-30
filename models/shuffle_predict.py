@@ -101,7 +101,7 @@ class AbstractBatch:
     def xy(self, batch, maxlen=10):
         for sents in self.unpack_encoded_batch(batch):
 
-            if len(sents) >= maxlen or len(sents) < 3:
+            if len(sents) >= maxlen:
                 continue
 
             pad_dim = sents.data.shape[1]
@@ -182,7 +182,7 @@ def main(train_path, vectors_path, train_skim, lr, epochs,
         model.cuda()
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.BCELoss()
+    criterion = nn.MSELoss()
 
     train_loss = []
     for epoch in range(epochs):
