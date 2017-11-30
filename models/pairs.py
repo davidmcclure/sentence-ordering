@@ -30,28 +30,22 @@ def load_vectors(path):
     vectors = KeyedVectors.load(path)
 
 
+def read_abstracts(path):
+    for path in glob(os.path.join(path, '*.json')):
+        with open(path) as fh:
+            for line in fh:
+                raw = ujson.loads(line.strip())
+                yield Abstract.from_raw(raw)
+
+
 class Corpus:
 
-    def __init__(self, path, skim=None):
-        self.pattern = os.path.join(path, '*.json')
-        self.skim = skim
-
-    def lines(self):
-        for path in glob(self.pattern):
-            with open(path) as fh:
-                for line in fh:
-                    yield line.strip()
-
-    def abstracts(self):
-        lines = self.lines()
-        if self.skim:
-            lines = islice(lines, self.skim)
-        for line in tqdm(lines, total=self.skim):
-            raw = ujson.loads(line)
-            yield Abstract.from_raw(raw)
+    def __init__(self, path, skim):
+        reader = islice(read_abstracts(path), skim)
+        self.abstracts = list(tqdm(reader, total=skim))
 
     def abstract_batches(self, size):
-        for chunk in chunked_iter(self.abstracts(), size):
+        for chunk in chunked_iter(tqdm(self.abstracts), size):
             yield AbstractBatch(chunk)
 
 
@@ -206,7 +200,7 @@ def main(train_path, test_path, vectors_path, train_skim, test_skim,
 
             epoch_loss += loss.data[0]
 
-        epoch_loss /= train.skim
+        epoch_loss /= train_skim
         train_loss.append(epoch_loss)
         print(epoch_loss)
 
