@@ -210,7 +210,10 @@ def main(train_path, vectors_path, train_skim, lr, epochs,
             epoch_loss += loss.data[0]
 
             if i == 0:
-                print(torch.stack([y[:50], y_pred[:50]], 1))
+                for j in range(5):
+                    yt = y[j*11:(j+1)*11]
+                    yp = y_pred[j*11:(j+1)*11]
+                    print(torch.stack([yt, yp], 1))
 
         epoch_loss /= len(train.abstracts)
         train_loss.append(epoch_loss)
