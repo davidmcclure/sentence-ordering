@@ -159,11 +159,11 @@ class Model(nn.Module):
 @click.command()
 @click.argument('train_path', type=click.Path())
 @click.argument('vectors_path', type=click.Path())
-@click.option('--train_skim', type=int, default=1000)
+@click.option('--train_skim', type=int, default=10000)
 @click.option('--lr', type=float, default=1e-4)
-@click.option('--epochs', type=int, default=10)
-@click.option('--batch_size', type=int, default=10)
-@click.option('--lstm_dim', type=int, default=200)
+@click.option('--epochs', type=int, default=50)
+@click.option('--batch_size', type=int, default=5)
+@click.option('--lstm_dim', type=int, default=512)
 def main(train_path, vectors_path, train_skim, lr, epochs,
     batch_size, lstm_dim):
 
@@ -190,7 +190,7 @@ def main(train_path, vectors_path, train_skim, lr, epochs,
         print(f'\nEpoch {epoch}')
 
         epoch_loss = 0
-        for i, batch in enumerate(train.batches(50)):
+        for i, batch in enumerate(train.batches(batch_size)):
 
             sents = Variable(batch.tensor()).type(ftype)
             sents = sent_encoder(sents)
@@ -218,6 +218,9 @@ def main(train_path, vectors_path, train_skim, lr, epochs,
         epoch_loss /= len(train.abstracts)
         train_loss.append(epoch_loss)
         print(epoch_loss)
+
+    torch.save(sent_encoder, 'sent-encoder.pt')
+    torch.save(model, 'model.pt')
 
 
 if __name__ == '__main__':
