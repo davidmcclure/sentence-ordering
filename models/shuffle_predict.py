@@ -101,10 +101,10 @@ class AbstractBatch:
             if len(sents) >= maxlen:
                 continue
 
-            zeros = Variable(torch.zeros(
-                maxlen-len(sents),
-                sents.data.shape[1],
-            ))
+            pad_len = maxlen-len(sents)
+            pad_dim = sents.data.shape[1]
+
+            zeros = Variable(torch.zeros(pad_len, pad_dim))
 
             shuffled_sents = sents[torch.randperm(len(sents))]
 
@@ -183,7 +183,7 @@ def main(train_path, vectors_path, train_skim, lr, epochs, batch_size):
         epoch_loss = 0
         for batch in train.batches(50):
 
-            sents = Variable(batch.tensor())
+            sents = Variable(batch.tensor()).type(dtype)
             sents = sent_encoder(sents)
 
             x, y = zip(*batch.xy(sents.squeeze()))
