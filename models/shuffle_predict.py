@@ -149,8 +149,8 @@ class Model(nn.Module):
         self.out = nn.Linear(lstm_dim, 1)
 
     def forward(self, x):
-        h0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(dtype))
-        c0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(dtype))
+        h0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(ftype))
+        c0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(ftype))
         _, (hn, cn) = self.lstm(x, (h0, c0))
         y = self.out(hn)
         return y.view(len(x))
