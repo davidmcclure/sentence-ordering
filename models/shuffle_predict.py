@@ -105,7 +105,7 @@ class AbstractBatch:
 
             pad_len = maxlen-len(sents)
             pad_dim = sents.data.shape[1]
-            zeros = Variable(torch.zeros(pad_len, pad_dim))
+            zeros = Variable(torch.zeros(pad_len, pad_dim)).type(ftype)
 
             shuffle = torch.randperm(len(sents)).type(itype)
             shuffled_sents = sents[shuffle]
