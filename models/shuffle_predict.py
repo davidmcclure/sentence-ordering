@@ -149,10 +149,10 @@ class Model(nn.Module):
         self.out = nn.Linear(lstm_dim, 1)
 
     def forward(self, x):
-        h0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(ftype))
-        c0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(ftype))
+        h0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(dtype))
+        c0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(dtype))
         _, (hn, cn) = self.lstm(x, (h0, c0))
-        y = F.sigmoid(self.out(hn))
+        y = self.out(hn)
         return y.view(len(x))
 
 
@@ -210,7 +210,7 @@ def main(train_path, vectors_path, train_skim, lr, epochs,
             epoch_loss += loss.data[0]
 
             if i == 0:
-                print(y_pred, y)
+                print(y[:50], y_pred[:50])
 
         epoch_loss /= len(train.abstracts)
         train_loss.append(epoch_loss)
