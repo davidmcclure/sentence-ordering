@@ -101,7 +101,7 @@ class AbstractBatch:
     def xy(self, batch, maxlen=10):
         for sents in self.unpack_encoded_batch(batch):
 
-            if len(sents) >= maxlen:
+            if len(sents) >= maxlen or len(sents) < 3:
                 continue
 
             pad_dim = sents.data.shape[1]
