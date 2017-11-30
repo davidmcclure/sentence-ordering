@@ -13,6 +13,7 @@ from boltons.iterutils import pairwise, chunked_iter
 from tqdm import tqdm
 from glob import glob
 from itertools import islice
+from scipy import stats
 
 from sklearn.metrics import classification_report, accuracy_score
 
@@ -103,12 +104,13 @@ class AbstractBatch:
             if len(sents) >= maxlen:
                 continue
 
-            pad_len = maxlen-len(sents)
-            pad_dim = sents.data.shape[1]
-            zeros = Variable(torch.zeros(pad_len, pad_dim)).type(ftype)
-
             shuffle = torch.randperm(len(sents)).type(itype)
+            kt, _ = stats.kendalltau(range(len(sents)), shuffle.tolist())
             shuffled_sents = sents[shuffle]
+
+            pad_dim = sents.data.shape[1]
+            pad_len = maxlen-len(sents)
+            zeros = Variable(torch.zeros(pad_len, pad_dim)).type(ftype)
 
             yield (
                 torch.cat([zeros, sents]),
@@ -117,7 +119,7 @@ class AbstractBatch:
 
             yield (
                 torch.cat([zeros, shuffled_sents]),
-                Variable(torch.FloatTensor([0]))
+                Variable(torch.FloatTensor([kt]))
             )
 
 
