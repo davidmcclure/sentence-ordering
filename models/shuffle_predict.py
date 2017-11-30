@@ -104,23 +104,26 @@ class AbstractBatch:
             if len(sents) >= maxlen:
                 continue
 
-            shuffle = torch.randperm(len(sents)).type(itype)
-            kt, _ = stats.kendalltau(range(len(sents)), shuffle.tolist())
-            shuffled_sents = sents[shuffle]
-
             pad_dim = sents.data.shape[1]
             pad_len = maxlen-len(sents)
             zeros = Variable(torch.zeros(pad_len, pad_dim)).type(ftype)
 
+            # Correct order.
             yield (
                 torch.cat([zeros, sents]),
                 Variable(torch.FloatTensor([1]))
             )
 
-            yield (
-                torch.cat([zeros, shuffled_sents]),
-                Variable(torch.FloatTensor([kt]))
-            )
+            for _ in range(10):
+
+                shuffle = torch.randperm(len(sents)).type(itype)
+                kt, _ = stats.kendalltau(range(len(sents)), shuffle.tolist())
+                shuffled_sents = sents[shuffle]
+
+                yield (
+                    torch.cat([zeros, shuffled_sents]),
+                    Variable(torch.FloatTensor([kt]))
+                )
 
 
 class SentenceEncoder(nn.Module):
@@ -159,7 +162,7 @@ class Model(nn.Module):
 @click.option('--train_skim', type=int, default=1000)
 @click.option('--lr', type=float, default=1e-4)
 @click.option('--epochs', type=int, default=10)
-@click.option('--batch_size', type=int, default=50)
+@click.option('--batch_size', type=int, default=10)
 @click.option('--lstm_dim', type=int, default=200)
 def main(train_path, vectors_path, train_skim, lr, epochs,
     batch_size, lstm_dim):
