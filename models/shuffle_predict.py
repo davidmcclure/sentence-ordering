@@ -137,17 +137,23 @@ class SentenceEncoder(nn.Module):
 
 class Model(nn.Module):
 
-    def __init__(self, input_dim=128, lstm_dim=128):
+    def __init__(self, input_dim=128, lstm_dim=128, lin_dim=128):
         super().__init__()
         self.lstm_dim = lstm_dim
         self.lstm = nn.LSTM(input_dim, lstm_dim, batch_first=True)
-        self.out = nn.Linear(lstm_dim, 1)
+        self.lin1 = nn.Linear(lstm_dim, lin_dim)
+        self.lin2 = nn.Linear(lin_dim, lin_dim)
+        self.lin3 = nn.Linear(lin_dim, lin_dim)
+        self.out = nn.Linear(lin_dim, 1)
 
     def forward(self, x):
         h0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(ftype))
         c0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(ftype))
         _, (hn, cn) = self.lstm(x, (h0, c0))
-        y = F.sigmoid(self.out(hn))
+        y = F.relu(self.lin1(hn))
+        y = F.relu(self.lin2(y))
+        y = F.relu(self.lin3(y))
+        y = F.sigmoid(self.out(y))
         return y.view(len(x))
 
 
@@ -158,7 +164,9 @@ class Model(nn.Module):
 @click.option('--lr', type=float, default=1e-4)
 @click.option('--epochs', type=int, default=10)
 @click.option('--batch_size', type=int, default=50)
-def main(train_path, vectors_path, train_skim, lr, epochs, batch_size):
+@click.option('--lstm_dim', type=int, default=512)
+def main(train_path, vectors_path, train_skim, lr, epochs,
+    batch_size, lstm_dim):
 
     load_vectors(vectors_path)
 
@@ -167,8 +175,8 @@ def main(train_path, vectors_path, train_skim, lr, epochs, batch_size):
     torch.manual_seed(1)
     train = Corpus(train_path, train_skim)
 
-    sent_encoder = SentenceEncoder()
-    model = Model()
+    sent_encoder = SentenceEncoder(lstm_dim)
+    model = Model(lstm_dim, lstm_dim)
 
     if cuda:
         sent_encoder.cuda()
