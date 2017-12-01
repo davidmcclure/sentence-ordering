@@ -134,6 +134,7 @@ class SentenceEncoder(nn.Module):
         self.lstm = nn.LSTM(300, lstm_dim, batch_first=True)
 
     def forward(self, x):
+        self.lstm.flatten_parameters()
         h0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(ftype))
         c0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(ftype))
         _, (hn, cn) = self.lstm(x, (h0, c0))
@@ -149,6 +150,7 @@ class Model(nn.Module):
         self.out = nn.Linear(lstm_dim, 1)
 
     def forward(self, x):
+        self.lstm.flatten_parameters()
         h0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(ftype))
         c0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(ftype))
         _, (hn, cn) = self.lstm(x, (h0, c0))
@@ -209,6 +211,7 @@ def main(train_path, vectors_path, train_skim, lr, epochs,
             sents = torch.cat([sents, zeros])
 
             sents = sent_encoder(sents)
+            sents = sents.view(pad_len, lstm_dim)
 
             x, y = zip(*batch.xy(sents.squeeze()))
 
