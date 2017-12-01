@@ -132,7 +132,6 @@ class SentenceEncoder(nn.Module):
         super().__init__()
         self.lstm_dim = lstm_dim
         self.lstm = nn.LSTM(300, lstm_dim, batch_first=True)
-        # self.lstm = nn.DataParallel(self.lstm)
 
     def forward(self, x):
         h0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(ftype))
@@ -147,9 +146,7 @@ class Model(nn.Module):
         super().__init__()
         self.lstm_dim = lstm_dim
         self.lstm = nn.LSTM(input_dim, lstm_dim, batch_first=True)
-        # self.lstm = nn.DataParallel(self.lstm)
         self.out = nn.Linear(lstm_dim, 1)
-        # self.out = nn.DataParallel(self.out)
 
     def forward(self, x):
         h0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(ftype))
@@ -183,15 +180,16 @@ def main(train_path, vectors_path, train_skim, lr, epochs,
     sent_encoder = nn.DataParallel(sent_encoder)
     model = nn.DataParallel(model)
 
-    if cuda:
-        sent_encoder.cuda()
-        model.cuda()
-
     params = list(sent_encoder.parameters()) + list(model.parameters())
 
     optimizer = torch.optim.Adam(params, lr=lr)
 
     criterion = nn.MSELoss()
+
+    if cuda:
+        sent_encoder = sent_encoder.cuda()
+        model = model.cuda()
+        criterion = criterion.cuda()
 
     train_loss = []
     for epoch in range(epochs):
