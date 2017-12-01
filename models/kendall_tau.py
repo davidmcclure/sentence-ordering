@@ -181,7 +181,10 @@ def main(train_path, vectors_path, train_skim, lr, epochs,
         sent_encoder.cuda()
         model.cuda()
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    params = list(sent_encoder.parameters()) + list(model.parameters())
+
+    optimizer = torch.optim.Adam(params, lr=lr)
+
     criterion = nn.MSELoss()
 
     train_loss = []
@@ -191,6 +194,8 @@ def main(train_path, vectors_path, train_skim, lr, epochs,
 
         epoch_loss = 0
         for i, batch in enumerate(train.batches(batch_size)):
+
+            optimizer.zero_grad()
 
             sents = Variable(batch.tensor()).type(ftype)
             sents = sent_encoder(sents)
