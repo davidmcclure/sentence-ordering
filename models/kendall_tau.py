@@ -159,10 +159,10 @@ class Model(nn.Module):
 @click.command()
 @click.argument('train_path', type=click.Path())
 @click.argument('vectors_path', type=click.Path())
-@click.option('--train_skim', type=int, default=10000)
+@click.option('--train_skim', type=int, default=100000)
 @click.option('--lr', type=float, default=1e-4)
 @click.option('--epochs', type=int, default=50)
-@click.option('--batch_size', type=int, default=5)
+@click.option('--batch_size', type=int, default=10)
 @click.option('--lstm_dim', type=int, default=512)
 def main(train_path, vectors_path, train_skim, lr, epochs,
     batch_size, lstm_dim):
@@ -177,15 +177,16 @@ def main(train_path, vectors_path, train_skim, lr, epochs,
     sent_encoder = SentenceEncoder(lstm_dim)
     model = Model(lstm_dim, lstm_dim)
 
-    if cuda:
-        sent_encoder.cuda()
-        model.cuda()
-
     params = list(sent_encoder.parameters()) + list(model.parameters())
 
     optimizer = torch.optim.Adam(params, lr=lr)
 
     criterion = nn.MSELoss()
+
+    if cuda:
+        sent_encoder = sent_encoder.cuda()
+        model = model.cuda()
+        criterion = criterion.cuda()
 
     train_loss = []
     for epoch in range(epochs):
