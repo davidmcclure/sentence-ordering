@@ -15,6 +15,7 @@ from glob import glob
 from itertools import islice
 from scipy import stats
 from itertools import permutations
+from collections import Counter
 
 from sklearn.metrics import classification_report, accuracy_score
 
@@ -134,6 +135,8 @@ def main(sent_encoder_path, model_path, test_path, vectors_path, test_skim):
     test = Corpus(test_path, test_skim)
 
     kts = []
+    c = Counter()
+    t = Counter()
     for ab in tqdm(test.abstracts):
 
         if len(ab.sentences) > 5:
@@ -155,12 +158,27 @@ def main(sent_encoder_path, model_path, test_path, vectors_path, test_skim):
 
         preds = model(candidates)
 
-        pred = perms[np.argmax(preds.data.tolist())]
+        max_idx = np.argmax(preds.data.tolist())
+
+        pred = perms[max_idx]
 
         kt, _ = stats.kendalltau(range(len(ab.sentences)), pred)
         kts.append(kt)
 
+        if kt == 1:
+            c[len(ab.sentences)] += 1
+
+        t[len(ab.sentences)] += 1
+
     print(sum(kts) / len(kts))
+
+    for slen in sorted(t.keys()):
+        pct = c.get(slen, 0) / t[slen]
+        print(slen, pct)
+
+    print(sum(c.values()) / sum(t.values()))
+
+    print(c, t)
 
 
 if __name__ == '__main__':
