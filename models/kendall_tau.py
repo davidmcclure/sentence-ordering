@@ -214,18 +214,12 @@ def main(train_path, vectors_path, train_skim, lr, epochs,
 
             epoch_loss += loss.data[0]
 
-            if i == 0:
-                for j in range(5):
-                    yt = y[j*11:(j+1)*11]
-                    yp = y_pred[j*11:(j+1)*11]
-                    print(torch.stack([yt, yp], 1))
-
         epoch_loss /= len(train.abstracts)
         train_loss.append(epoch_loss)
         print(epoch_loss)
 
-    torch.save(sent_encoder, 'sent-encoder.pt')
-    torch.save(model, 'model.pt')
+        torch.save(sent_encoder, f'sent-encoder.{epoch}.pt')
+        torch.save(model, f'model.{epoch}.pt')
 
 
 if __name__ == '__main__':
