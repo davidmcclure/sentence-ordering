@@ -202,6 +202,12 @@ def main(train_path, vectors_path, train_skim, lr, epochs,
             optimizer.zero_grad()
 
             sents = Variable(batch.tensor()).type(ftype)
+
+            # Pad so that len % 8 == 0.
+            pad_len = 8 - len(sents) % 8
+            zeros = Variable(torch.zeros(pad_len, 50, 300)).type(ftype)
+            sents = torch.cat([sents, zeros])
+
             sents = sent_encoder(sents)
 
             x, y = zip(*batch.xy(sents.squeeze()))
