@@ -177,8 +177,8 @@ def main(train_path, vectors_path, train_skim, lr, epochs,
     sent_encoder = SentenceEncoder(lstm_dim)
     model = Model(lstm_dim, lstm_dim)
 
-    # sent_encoder = nn.DataParallel(sent_encoder)
-    # model = nn.DataParallel(model)
+    sent_encoder = nn.DataParallel(sent_encoder)
+    model = nn.DataParallel(model)
 
     params = list(sent_encoder.parameters()) + list(model.parameters())
 
