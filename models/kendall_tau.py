@@ -132,6 +132,7 @@ class SentenceEncoder(nn.Module):
         super().__init__()
         self.lstm_dim = lstm_dim
         self.lstm = nn.LSTM(300, lstm_dim, batch_first=True)
+        self.lstm = nn.DataParallel(self.lstm)
 
     def forward(self, x):
         h0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(ftype))
@@ -146,7 +147,9 @@ class Model(nn.Module):
         super().__init__()
         self.lstm_dim = lstm_dim
         self.lstm = nn.LSTM(input_dim, lstm_dim, batch_first=True)
+        self.lstm = nn.DataParallel(self.lstm)
         self.out = nn.Linear(lstm_dim, 1)
+        self.out = nn.DataParallel(self.out)
 
     def forward(self, x):
         h0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(ftype))
