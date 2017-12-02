@@ -22,10 +22,10 @@ def max_perm_dist(size):
     return int(per_mallows.maxi_dist(size)[0])
 
 
-@no_warnings
 def sample_uniform_perms(size, n=10):
     """Sample N perms, uniformly distributed across the (-1, 1) KT interval.
     """
     max_dist = max_perm_dist(size)
-    dists = np.linspace(0, max_dist, n, dtype=int)
-    return [perm_at_dist(size, int(d)) for d in dists]
+
+    for d in np.linspace(0, max_dist, n, dtype=int):
+        yield perm_at_dist(size, int(d))
