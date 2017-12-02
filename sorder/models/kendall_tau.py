@@ -162,12 +162,13 @@ class Model(nn.Module):
 @click.command()
 @click.argument('train_path', type=click.Path())
 @click.argument('vectors_path', type=click.Path())
+@click.argument('model_path', type=click.Path())
 @click.option('--train_skim', type=int, default=100000)
 @click.option('--lr', type=float, default=1e-4)
 @click.option('--epochs', type=int, default=50)
 @click.option('--batch_size', type=int, default=5)
 @click.option('--lstm_dim', type=int, default=512)
-def main(train_path, vectors_path, train_skim, lr, epochs,
+def main(train_path, vectors_path, model_path, train_skim, lr, epochs,
     batch_size, lstm_dim):
 
     load_vectors(vectors_path)
@@ -222,8 +223,11 @@ def main(train_path, vectors_path, train_skim, lr, epochs,
         train_loss.append(epoch_loss)
         print(epoch_loss)
 
-        torch.save(sent_encoder, f'sent-encoder.{epoch}.pt')
-        torch.save(model, f'model.{epoch}.pt')
+        spath = os.path.join(model_path, f'sent-encoder.{epoch}.pt')
+        mpath = os.path.join(model_path, f'model.{epoch}.pt')
+
+        torch.save(sent_encoder, spath)
+        torch.save(model, mpath)
 
 
 if __name__ == '__main__':
