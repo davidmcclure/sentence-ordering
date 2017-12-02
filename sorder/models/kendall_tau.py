@@ -21,9 +21,10 @@ from torch import nn
 from torch.nn import functional as F
 from torch.autograd import Variable
 
+from sorder.perms import sample_uniform_perms
+
 
 cuda = bool(os.environ.get('CUDA'))
-
 ftype = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 itype = torch.cuda.LongTensor if cuda else torch.LongTensor
 
@@ -104,22 +105,24 @@ class AbstractBatch:
             if len(sents) >= maxlen:
                 continue
 
+            # Get zeros padding tensor, to normalize abstract lengths.
             pad_dim = sents.data.shape[1]
             pad_len = maxlen-len(sents)
             zeros = Variable(torch.zeros(pad_len, pad_dim)).type(ftype)
 
-            # Correct order.
-            yield (
-                torch.cat([zeros, sents]),
-                Variable(torch.FloatTensor([1]))
-            )
+            # Sample random perms, uniformly across KT interval.
+            perms = sample_uniform_perms(len(sents), 10)
 
-            for _ in range(10):
+            for perm in perms:
 
-                shuffle = torch.randperm(len(sents)).type(itype)
-                kt, _ = stats.kendalltau(range(len(sents)), shuffle.tolist())
-                shuffled_sents = sents[shuffle]
+                # Get KT distance for perm.
+                kt, _ = stats.kendalltau(range(len(sents)), perm)
 
+                # Shuffle sentence tensors.
+                perm = torch.LongTensor(perm).type(itype)
+                shuffled_sents = sents[perm]
+
+                # Correct order.
                 yield (
                     torch.cat([zeros, shuffled_sents]),
                     Variable(torch.FloatTensor([kt]))
@@ -152,7 +155,7 @@ class Model(nn.Module):
         h0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(ftype))
         c0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(ftype))
         _, (hn, cn) = self.lstm(x, (h0, c0))
-        y = self.out(hn)
+        y = F.tanh(self.out(hn))
         return y.view(len(x))
 
 
@@ -162,7 +165,7 @@ class Model(nn.Module):
 @click.option('--train_skim', type=int, default=100000)
 @click.option('--lr', type=float, default=1e-4)
 @click.option('--epochs', type=int, default=50)
-@click.option('--batch_size', type=int, default=10)
+@click.option('--batch_size', type=int, default=5)
 @click.option('--lstm_dim', type=int, default=512)
 def main(train_path, vectors_path, train_skim, lr, epochs,
     batch_size, lstm_dim):

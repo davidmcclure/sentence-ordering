@@ -11,7 +11,9 @@ def perm_at_dist(size, dist):
     """Draw a random permutation as a given KT distance.
     """
     perm = per_mallows.rdist(1, size, dist)
-    return list(map(int, perm))
+    # 0-index
+    perm = np.array(list(perm), dtype=int) - 1
+    return perm.tolist()
 
 
 def max_perm_dist(size):
