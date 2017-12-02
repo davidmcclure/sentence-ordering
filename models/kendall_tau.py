@@ -114,15 +114,16 @@ class AbstractBatch:
                 Variable(torch.FloatTensor([1]))
             )
 
-            shuffle = torch.randperm(len(sents)).type(itype)
-            kt, _ = stats.kendalltau(range(len(sents)), shuffle.tolist())
-            shuffled_sents = sents[shuffle]
+            for _ in range(10):
 
-            # Shuffled.
-            yield (
-                torch.cat([zeros, shuffled_sents]),
-                Variable(torch.FloatTensor([0]))
-            )
+                shuffle = torch.randperm(len(sents)).type(itype)
+                kt, _ = stats.kendalltau(range(len(sents)), shuffle.tolist())
+                shuffled_sents = sents[shuffle]
+
+                yield (
+                    torch.cat([zeros, shuffled_sents]),
+                    Variable(torch.FloatTensor([kt]))
+                )
 
 
 class SentenceEncoder(nn.Module):
@@ -151,7 +152,7 @@ class Model(nn.Module):
         h0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(ftype))
         c0 = Variable(torch.zeros(1, len(x), self.lstm_dim).type(ftype))
         _, (hn, cn) = self.lstm(x, (h0, c0))
-        y = F.sigmoid(self.out(hn))
+        y = self.out(hn)
         return y.view(len(x))
 
 
@@ -161,7 +162,7 @@ class Model(nn.Module):
 @click.option('--train_skim', type=int, default=100000)
 @click.option('--lr', type=float, default=1e-4)
 @click.option('--epochs', type=int, default=50)
-@click.option('--batch_size', type=int, default=50)
+@click.option('--batch_size', type=int, default=10)
 @click.option('--lstm_dim', type=int, default=512)
 def main(train_path, vectors_path, train_skim, lr, epochs,
     batch_size, lstm_dim):
@@ -180,7 +181,7 @@ def main(train_path, vectors_path, train_skim, lr, epochs,
 
     optimizer = torch.optim.Adam(params, lr=lr)
 
-    criterion = nn.BCELoss()
+    criterion = nn.MSELoss()
 
     if cuda:
         sent_encoder = sent_encoder.cuda()
