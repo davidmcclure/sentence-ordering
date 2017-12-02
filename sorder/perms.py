@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from rpy2.robjects.packages import importr
+from rpy2.robjects.packages import importr, no_warnings
 
 per_mallows = importr('PerMallows')
 
@@ -22,6 +22,7 @@ def max_perm_dist(size):
     return int(per_mallows.maxi_dist(size)[0])
 
 
+@no_warnings
 def sample_uniform_perms(size, n=10):
     """Sample N perms, uniformly distributed across the (-1, 1) KT interval.
     """
