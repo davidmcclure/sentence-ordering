@@ -163,7 +163,7 @@ class Model(nn.Module):
 @click.argument('train_path', type=click.Path())
 @click.argument('vectors_path', type=click.Path())
 @click.argument('model_path', type=click.Path())
-@click.option('--train_skim', type=int, default=100000)
+@click.option('--train_skim', type=int, default=10000)
 @click.option('--lr', type=float, default=1e-4)
 @click.option('--epochs', type=int, default=50)
 @click.option('--batch_size', type=int, default=5)
