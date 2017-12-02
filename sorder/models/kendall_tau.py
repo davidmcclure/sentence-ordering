@@ -7,6 +7,7 @@ import os
 import click
 import torch
 import ujson
+import gc
 
 from gensim.models import KeyedVectors
 from boltons.iterutils import pairwise, chunked_iter
@@ -228,6 +229,8 @@ def main(train_path, vectors_path, model_path, train_skim, lr, epochs,
 
         torch.save(sent_encoder, spath)
         torch.save(model, mpath)
+
+        gc.collect()
 
 
 if __name__ == '__main__':
