@@ -220,6 +220,9 @@ def main(train_path, vectors_path, model_path, train_skim, lr, epochs,
 
             epoch_loss += loss.data[0]
 
+            if i % 100 == 0:
+                gc.collect()
+
         epoch_loss /= len(train.abstracts)
         train_loss.append(epoch_loss)
         print(epoch_loss)
@@ -229,8 +232,6 @@ def main(train_path, vectors_path, model_path, train_skim, lr, epochs,
 
         torch.save(sent_encoder, spath)
         torch.save(model, mpath)
-
-        gc.collect()
 
 
 if __name__ == '__main__':

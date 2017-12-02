@@ -134,6 +134,7 @@ def main(sent_encoder_path, model_path, test_path, vectors_path, test_skim):
     test = Corpus(test_path, test_skim)
 
     kts = []
+    c, t = 0, 0
     for ab in tqdm(test.abstracts):
 
         if len(ab.sentences) > 5:
@@ -160,7 +161,11 @@ def main(sent_encoder_path, model_path, test_path, vectors_path, test_skim):
         kt, _ = stats.kendalltau(range(len(ab.sentences)), pred)
         kts.append(kt)
 
+        if kt == 1: c += 1
+        t += 1
+
     print(sum(kts) / len(kts))
+    print(c/t)
 
 
 if __name__ == '__main__':
