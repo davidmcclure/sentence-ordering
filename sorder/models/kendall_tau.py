@@ -110,23 +110,20 @@ class AbstractBatch:
             pad_len = maxlen-len(sents)
             zeros = Variable(torch.zeros(pad_len, pad_dim)).type(ftype)
 
-            # Sample random perms, uniformly across KT interval.
-            perms = sample_uniform_perms(len(sents), 10)
+            # Correct order.
+            yield (
+                torch.cat([zeros, sents]),
+                Variable(torch.FloatTensor([1]))
+            )
 
-            for perm in perms:
+            shuffle = torch.randperm(len(sents)).type(itype)
+            shuffled_sents = sents[shuffle]
 
-                # Get KT distance for perm.
-                kt, _ = stats.kendalltau(range(len(sents)), perm)
-
-                # Shuffle sentence tensors.
-                perm = torch.LongTensor(perm).type(itype)
-                shuffled_sents = sents[perm]
-
-                # Correct order.
-                yield (
-                    torch.cat([zeros, shuffled_sents]),
-                    Variable(torch.FloatTensor([kt]))
-                )
+            # Shuffled order.
+            yield (
+                torch.cat([zeros, sents]),
+                Variable(torch.FloatTensor([0]))
+            )
 
 
 class SentenceEncoder(nn.Module):
@@ -149,7 +146,7 @@ class Model(nn.Module):
 
     def forward(self, x):
         _, (hn, cn) = self.lstm(x.transpose(0, 1))
-        y = F.tanh(self.out(hn))
+        y = F.sigmoid(self.out(hn))
         return y.squeeze()
 
 
@@ -179,7 +176,7 @@ def main(train_path, vectors_path, model_path, train_skim, lr, epochs,
 
     optimizer = torch.optim.Adam(params, lr=lr)
 
-    criterion = nn.MSELoss()
+    criterion = nn.BCELoss()
 
     if cuda:
         sent_encoder = sent_encoder.cuda()
