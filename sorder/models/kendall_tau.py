@@ -121,7 +121,7 @@ class AbstractBatch:
 
             # Shuffled order.
             yield (
-                torch.cat([zeros, sents]),
+                torch.cat([zeros, shuffled_sents]),
                 Variable(torch.FloatTensor([0]))
             )
 
