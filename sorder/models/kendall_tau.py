@@ -162,8 +162,9 @@ class Model(nn.Module):
 @click.option('--epochs', type=int, default=50)
 @click.option('--batch_size', type=int, default=5)
 @click.option('--lstm_dim', type=int, default=512)
+@click.option('--dp', is_flag=True)
 def main(train_path, vectors_path, model_path, train_skim, lr, epochs,
-    batch_size, lstm_dim):
+    batch_size, lstm_dim, dp):
 
     load_vectors(vectors_path)
 
@@ -185,6 +186,10 @@ def main(train_path, vectors_path, model_path, train_skim, lr, epochs,
         sent_encoder = sent_encoder.cuda()
         model = model.cuda()
         criterion = criterion.cuda()
+
+    if dp:
+        sent_encoder = nn.DataParallel(sent_encoder)
+        model = nn.DataParallel(model)
 
     train_loss = []
     for epoch in range(epochs):
