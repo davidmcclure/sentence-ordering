@@ -10,7 +10,7 @@ per_mallows = importr('PerMallows')
 
 class PermAtDist:
 
-    def __init__(self, gc_count=100):
+    def __init__(self, gc_count=1000):
         self.gc_count = gc_count
         self.calls = 0
 
@@ -24,6 +24,8 @@ class PermAtDist:
         return perm.tolist()
 
     def _gc(self):
+        """rdist() leaks, so force GC in R every N calls.
+        """
         self.calls += 1
         if self.calls % self.gc_count == 0:
             r('gc()')

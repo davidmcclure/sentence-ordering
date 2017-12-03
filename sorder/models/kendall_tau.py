@@ -7,7 +7,6 @@ import os
 import click
 import torch
 import ujson
-import gc
 
 from gensim.models import KeyedVectors
 from boltons.iterutils import pairwise, chunked_iter
@@ -213,9 +212,6 @@ def main(train_path, vectors_path, model_path, train_skim, lr, epochs,
             optimizer.step()
 
             epoch_loss += loss.data[0]
-
-            if i % 100 == 0:
-                gc.collect()
 
         epoch_loss /= len(train.abstracts)
         train_loss.append(epoch_loss)
