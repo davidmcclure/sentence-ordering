@@ -134,10 +134,14 @@ class SentenceEncoder(nn.Module):
     def __init__(self, lstm_dim=128):
         super().__init__()
         self.lstm = nn.LSTM(300, lstm_dim)
+        self.lin1 = nn.Linear(lstm_dim, lstm_dim)
+        self.lin2 = nn.Linear(lstm_dim, lstm_dim)
 
     def forward(self, x):
         _, (hn, cn) = self.lstm(x.transpose(0, 1))
-        return hn
+        y = F.relu(self.lin1(hn))
+        y = F.relu(self.lin2(y))
+        return y
 
 
 class Model(nn.Module):
@@ -145,11 +149,15 @@ class Model(nn.Module):
     def __init__(self, input_dim=128, lstm_dim=128):
         super().__init__()
         self.lstm = nn.LSTM(input_dim, lstm_dim)
+        self.lin1 = nn.Linear(lstm_dim, lstm_dim)
+        self.lin2 = nn.Linear(lstm_dim, lstm_dim)
         self.out = nn.Linear(lstm_dim, 1)
 
     def forward(self, x):
         _, (hn, cn) = self.lstm(x.transpose(0, 1))
-        y = F.tanh(self.out(hn))
+        y = F.relu(self.lin1(hn))
+        y = F.relu(self.lin2(y))
+        y = F.tanh(self.out(y))
         return y.squeeze()
 
 
