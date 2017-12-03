@@ -101,7 +101,7 @@ class Model(nn.Module):
 
     def forward(self, x):
         _, (hn, cn) = self.lstm(x.transpose(0, 1))
-        y = F.tanh(self.out(hn))
+        y = F.sigmoid(self.out(hn))
         return y.squeeze()
 
 

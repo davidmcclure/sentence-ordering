@@ -128,26 +128,26 @@ class AbstractBatch:
 
 class SentenceEncoder(nn.Module):
 
-    def __init__(self, lstm_dim=128):
+    def __init__(self, lstm_dim=512, num_layers=4):
         super().__init__()
-        self.lstm = nn.LSTM(300, lstm_dim)
+        self.lstm = nn.LSTM(300, lstm_dim, num_layers)
 
     def forward(self, x):
         _, (hn, cn) = self.lstm(x.transpose(0, 1))
-        return hn
+        return hn.view(len(x), -1)
 
 
 class Model(nn.Module):
 
-    def __init__(self, input_dim=128, lstm_dim=128):
+    def __init__(self, input_dim=512*4, lstm_dim=512, num_layers=4):
         super().__init__()
-        self.lstm = nn.LSTM(input_dim, lstm_dim)
-        self.out = nn.Linear(lstm_dim, 1)
+        self.lstm = nn.LSTM(input_dim, lstm_dim, num_layers)
+        self.out = nn.Linear(lstm_dim*num_layers, 1)
 
     def forward(self, x):
         _, (hn, cn) = self.lstm(x.transpose(0, 1))
-        y = F.sigmoid(self.out(hn))
-        return y.squeeze()
+        y = self.out(hn.view(len(x), -1))
+        return F.sigmoid(y).squeeze()
 
 
 @click.command()
@@ -155,12 +155,9 @@ class Model(nn.Module):
 @click.argument('vectors_path', type=click.Path())
 @click.argument('model_path', type=click.Path())
 @click.option('--train_skim', type=int, default=10000)
-@click.option('--lr', type=float, default=1e-4)
 @click.option('--epochs', type=int, default=50)
-@click.option('--batch_size', type=int, default=5)
-@click.option('--lstm_dim', type=int, default=512)
-def main(train_path, vectors_path, model_path, train_skim, lr, epochs,
-    batch_size, lstm_dim):
+@click.option('--batch_size', type=int, default=64)
+def main(train_path, vectors_path, model_path, train_skim, epochs, batch_size):
 
     load_vectors(vectors_path)
 
@@ -169,12 +166,12 @@ def main(train_path, vectors_path, model_path, train_skim, lr, epochs,
     torch.manual_seed(1)
     train = Corpus(train_path, train_skim)
 
-    sent_encoder = SentenceEncoder(lstm_dim)
-    model = Model(lstm_dim, lstm_dim)
+    sent_encoder = SentenceEncoder()
+    model = Model()
 
     params = list(sent_encoder.parameters()) + list(model.parameters())
 
-    optimizer = torch.optim.Adam(params, lr=lr)
+    optimizer = torch.optim.Adam(params, lr=1e-4)
 
     criterion = nn.BCELoss()
 
