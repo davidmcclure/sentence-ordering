@@ -85,7 +85,6 @@ class SentenceEncoder(nn.Module):
 
     def __init__(self, lstm_dim=128):
         super().__init__()
-        self.lstm_dim = lstm_dim
         self.lstm = nn.LSTM(300, lstm_dim)
 
     def forward(self, x):
@@ -97,7 +96,6 @@ class Model(nn.Module):
 
     def __init__(self, input_dim=128, lstm_dim=128):
         super().__init__()
-        self.lstm_dim = lstm_dim
         self.lstm = nn.LSTM(input_dim, lstm_dim)
         self.out = nn.Linear(lstm_dim, 1)
 
