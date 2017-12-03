@@ -2,18 +2,34 @@
 
 import numpy as np
 
-from rpy2.robjects.packages import importr, no_warnings
+from rpy2.robjects.packages import importr
+from rpy2.robjects import r
 
 per_mallows = importr('PerMallows')
 
 
-def perm_at_dist(size, dist):
-    """Draw a random permutation as a given KT distance.
-    """
-    perm = per_mallows.rdist(1, size, dist)
-    # 0-index
-    perm = np.array(list(perm), dtype=int) - 1
-    return perm.tolist()
+class PermAtDist:
+
+    def __init__(self, gc_count=100):
+        self.gc_count = gc_count
+        self.calls = 0
+
+    def __call__(self, size, dist):
+        """Draw a random permutation as a given KT distance.
+        """
+        perm = per_mallows.rdist(1, size, dist)
+        # 0-index
+        perm = np.array(list(perm), dtype=int) - 1
+        self._gc()
+        return perm.tolist()
+
+    def _gc(self):
+        self.calls += 1
+        if self.calls % self.gc_count == 0:
+            r('gc()')
+
+
+perm_at_dist = PermAtDist()
 
 
 def max_perm_dist(size):
@@ -26,6 +42,5 @@ def sample_uniform_perms(size, n=10):
     """Sample N perms, uniformly distributed across the (-1, 1) KT interval.
     """
     max_dist = max_perm_dist(size)
-
-    for d in np.linspace(0, max_dist, n, dtype=int):
-        yield perm_at_dist(size, int(d))
+    dists = np.linspace(0, max_dist, n, dtype=int)
+    return [perm_at_dist(size, int(d)) for d in dists]
