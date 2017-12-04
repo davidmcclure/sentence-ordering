@@ -3,9 +3,9 @@
 import attr
 import os
 import ujson
+import random
 
 import numpy as np
-import torch
 
 from glob import glob
 from itertools import islice
@@ -13,7 +13,12 @@ from tqdm import tqdm
 from cached_property import cached_property
 from gensim.models import KeyedVectors
 
+import torch
+from torch import nn
+from torch.autograd import Variable
+
 from sorder.vectors import LazyVectors
+from sorder.cuda import ftype, itype
 
 
 vectors = LazyVectors.read()
@@ -89,3 +94,55 @@ class Corpus:
             reader = islice(reader, skim)
 
         self.abstracts = list(tqdm(reader, total=skim))
+
+    def random_batch(self, size):
+        return random.sample(self.abstracts, size)
+
+
+class SentenceEncoder(nn.Module):
+
+    def __init__(self, lstm_dim=512):
+        super().__init__()
+        self.lstm = nn.LSTM(300, lstm_dim, batch_first=True)
+
+    def forward(self, x):
+        _, (hn, cn) = self.lstm(x)
+        return hn.squeeze()
+
+    def encode_batch(self, batch):
+        """Encode sentences in an abstract batch.
+
+        Args:
+            batch (list of Abstract)
+
+        Yields: Unpacked tensors for each abstract.
+        """
+        # Combine sentences into single batch.
+        x = torch.cat([a.tensor() for a in batch])
+        x = Variable(x).type(ftype)
+
+        y = self(x)
+
+        # Unpack into separate tensor for each abstract.
+        start = 0
+        for a in batch:
+            yield y[start:start+len(a.sentences)]
+            start += len(a.sentences)
+
+    def batch_xy(self, batch):
+        """Given a batch, encode sentences and make x/y training pairs.
+
+        Args:
+            batch (list of Abstract)
+        """
+        x = []
+        y = []
+        for a in self.encode_batch(batch):
+            for i in range(len(a)):
+                x.append(a[i])
+                y.append(i / (len(a)-1))
+
+        x = torch.stack(x)
+        y = Variable(torch.FloatTensor(y)).type(ftype)
+
+        return x, y
