@@ -19,14 +19,15 @@ from sorder.vectors import LazyVectors
 vectors = LazyVectors.read()
 
 
-def read_abstracts(path):
+def read_abstracts(path, maxlen):
     """Parse abstract JSON lines.
     """
     for path in glob(os.path.join(path, '*.json')):
         with open(path) as fh:
             for line in fh:
                 json = ujson.loads(line.strip())
-                yield Abstract.from_json(json)
+                if len(json['sentences']) < maxlen:
+                    yield Abstract.from_json(json)
 
 
 @attr.s
@@ -65,12 +66,24 @@ class Abstract:
         return torch.stack(tensors)
 
 
+@attr.s
+class AbstractBatch:
+
+    abstracts = attr.ib()
+
+    def tensor(self):
+        """Stack abstract tensors.
+        """
+        tensors = [a.tensor() for a in self.abstracts]
+        return torch.cat(tensors)
+
+
 class Corpus:
 
-    def __init__(self, path, skim=None):
+    def __init__(self, path, skim=None, maxlen=10):
         """Load abstracts into memory.
         """
-        reader = read_abstracts(path)
+        reader = read_abstracts(path, maxlen)
 
         if skim:
             reader = islice(reader, skim)
