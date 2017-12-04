@@ -103,7 +103,7 @@ class Corpus:
 
 class SentenceEncoder(nn.Module):
 
-    def __init__(self, lstm_dim=1024):
+    def __init__(self, lstm_dim):
         super().__init__()
         self.lstm = nn.LSTM(300, lstm_dim, batch_first=True)
 
@@ -152,7 +152,7 @@ class SentenceEncoder(nn.Module):
 
 class Regressor(nn.Module):
 
-    def __init__(self, input_dim=512):
+    def __init__(self, input_dim):
         super().__init__()
         self.out = nn.Linear(input_dim, 1)
 
@@ -168,14 +168,15 @@ class Regressor(nn.Module):
 @click.option('--epochs', type=int, default=50)
 @click.option('--epoch_size', type=int, default=100)
 @click.option('--batch_size', type=int, default=10)
-def main(train_path, train_skim, lr, epochs, epoch_size, batch_size):
+@click.option('--lstm_dim', type=int, default=1024)
+def main(train_path, train_skim, lr, epochs, epoch_size, batch_size, lstm_dim):
 
     torch.manual_seed(1)
 
     train = Corpus(train_path, train_skim)
 
-    encoder = SentenceEncoder()
-    regressor = Regressor()
+    encoder = SentenceEncoder(lstm_dim)
+    regressor = Regressor(lstm_dim)
 
     params = list(encoder.parameters()) + list(regressor.parameters())
     optimizer = torch.optim.Adam(params, lr=lr)
