@@ -5,10 +5,18 @@ import os
 import ujson
 
 import numpy as np
+import torch
 
 from glob import glob
 from itertools import islice
 from tqdm import tqdm
+from cached_property import cached_property
+from gensim.models import KeyedVectors
+
+from sorder.vectors import LazyVectors
+
+
+vectors = LazyVectors.read()
 
 
 def read_abstracts(path):
