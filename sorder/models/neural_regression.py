@@ -4,6 +4,7 @@ import attr
 import os
 import ujson
 import random
+import click
 
 import numpy as np
 
@@ -18,7 +19,7 @@ from torch import nn
 from torch.autograd import Variable
 
 from sorder.vectors import LazyVectors
-from sorder.cuda import ftype, itype
+from sorder.cuda import CUDA, ftype, itype
 
 
 vectors = LazyVectors.read()
@@ -95,8 +96,9 @@ class Corpus:
 
         self.abstracts = list(tqdm(reader, total=skim))
 
-    def random_batch(self, size):
-        return random.sample(self.abstracts, size)
+    def random_batches(self, n, size):
+        for _ in tqdm(range(n)):
+            yield random.sample(self.abstracts, size)
 
 
 class SentenceEncoder(nn.Module):
@@ -146,3 +148,71 @@ class SentenceEncoder(nn.Module):
         y = Variable(torch.FloatTensor(y)).type(ftype)
 
         return x, y
+
+
+class Regressor(nn.Module):
+
+    def __init__(self, input_dim=512):
+        super().__init__()
+        self.out = nn.Linear(input_dim, 1)
+
+    def forward(self, x):
+        y = self.out(x)
+        return y.squeeze()
+
+
+@click.command()
+@click.argument('train_path', type=click.Path())
+@click.option('--train_skim', type=int, default=10000)
+@click.option('--lr', type=float, default=1e-4)
+@click.option('--epochs', type=int, default=50)
+@click.option('--epoch_size', type=int, default=100)
+@click.option('--batch_size', type=int, default=10)
+def main(train_path, train_skim, lr, epochs, epoch_size, batch_size):
+
+    torch.manual_seed(1)
+
+    train = Corpus(train_path, train_skim)
+
+    encoder = SentenceEncoder()
+    regressor = Regressor()
+
+    params = list(encoder.parameters()) + list(regressor.parameters())
+    optimizer = torch.optim.Adam(params, lr=lr)
+
+    criterion = nn.MSELoss()
+
+    if CUDA:
+        encoder = encoder.cuda()
+        regressor = regressor.cuda()
+        criterion = criterion.cuda()
+
+    first_loss = None
+    for epoch in range(epochs):
+
+        print(f'\nEpoch {epoch}')
+
+        epoch_loss = 0
+        for batch in train.random_batches(epoch_size, batch_size):
+
+            optimizer.zero_grad()
+
+            x, y = encoder.batch_xy(batch)
+            y_pred = regressor(x)
+
+            loss = criterion(y_pred, y)
+            loss.backward()
+
+            optimizer.step()
+
+            epoch_loss += loss.data[0]
+
+        if not first_loss:
+            first_loss = epoch_loss
+
+        epoch_loss /= first_loss
+        print(epoch_loss)
+
+
+if __name__ == '__main__':
+    main()
