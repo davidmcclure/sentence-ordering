@@ -180,7 +180,7 @@ def main(train_path, train_skim, lr, epochs, epoch_size, batch_size):
     params = list(encoder.parameters()) + list(regressor.parameters())
     optimizer = torch.optim.Adam(params, lr=lr)
 
-    criterion = nn.MSELoss()
+    loss_func = nn.MSELoss()
 
     if CUDA:
         encoder = encoder.cuda()
@@ -200,7 +200,7 @@ def main(train_path, train_skim, lr, epochs, epoch_size, batch_size):
             x, y = encoder.batch_xy(batch)
             y_pred = regressor(x)
 
-            loss = criterion(y_pred, y)
+            loss = loss_func(y_pred, y)
             loss.backward()
 
             optimizer.step()
