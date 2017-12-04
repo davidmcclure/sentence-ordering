@@ -103,7 +103,7 @@ class Corpus:
 
 class SentenceEncoder(nn.Module):
 
-    def __init__(self, lstm_dim=512):
+    def __init__(self, lstm_dim=1024):
         super().__init__()
         self.lstm = nn.LSTM(300, lstm_dim, batch_first=True)
 
