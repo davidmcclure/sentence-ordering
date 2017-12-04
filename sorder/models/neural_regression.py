@@ -185,7 +185,7 @@ def main(train_path, train_skim, lr, epochs, epoch_size, batch_size):
     if CUDA:
         encoder = encoder.cuda()
         regressor = regressor.cuda()
-        criterion = criterion.cuda()
+        loss_func = loss_func.cuda()
 
     first_loss = None
     for epoch in range(epochs):
