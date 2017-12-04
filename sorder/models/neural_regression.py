@@ -180,7 +180,7 @@ def main(train_path, train_skim, lr, epochs, epoch_size, batch_size):
     params = list(encoder.parameters()) + list(regressor.parameters())
     optimizer = torch.optim.Adam(params, lr=lr)
 
-    loss_func = nn.MSELoss()
+    loss_func = nn.L1Loss()
 
     if CUDA:
         encoder = encoder.cuda()
@@ -207,11 +207,13 @@ def main(train_path, train_skim, lr, epochs, epoch_size, batch_size):
 
             epoch_loss += loss.data[0]
 
+        epoch_loss /= epoch_size
+
         if not first_loss:
             first_loss = epoch_loss
 
-        epoch_loss /= first_loss
         print(epoch_loss)
+        print(epoch_loss / first_loss)
 
 
 if __name__ == '__main__':
