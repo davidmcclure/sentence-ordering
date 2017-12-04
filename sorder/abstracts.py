@@ -8,8 +8,9 @@ import torch
 
 import numpy as np
 
-from glob import glob
 from itertools import islice
+from glob import glob
+from boltons.iterutils import chunked_iter
 from tqdm import tqdm
 
 from sorder.vectors import LazyVectors
@@ -89,6 +90,8 @@ class Corpus:
 
         self.abstracts = list(tqdm(reader, total=skim))
 
-    def random_batches(self, n, size):
-        for _ in tqdm(range(n)):
-            yield random.sample(self.abstracts, size)
+    def random_batch(self, size):
+        return random.sample(self.abstracts, size)
+
+    def batches(self, size):
+        yield from chunked_iter(self.abstracts, size)

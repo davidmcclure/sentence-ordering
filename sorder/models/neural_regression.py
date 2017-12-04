@@ -6,6 +6,8 @@ import os
 
 from torch import nn
 from torch.autograd import Variable
+from tqdm import tqdm
+from scipy import stats
 
 from sorder.cuda import CUDA, ftype, itype
 from sorder.abstracts import Corpus
@@ -87,8 +89,9 @@ def cli():
 @click.option('--batch_size', type=int, default=10)
 @click.option('--lstm_dim', type=int, default=1024)
 def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
-        batch_size, lstm_dim):
-
+    batch_size, lstm_dim):
+    """Train model.
+    """
     torch.manual_seed(1)
 
     train = Corpus(train_path, train_skim)
@@ -112,9 +115,11 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
         print(f'\nEpoch {epoch}')
 
         epoch_loss = 0
-        for batch in train.random_batches(epoch_size, batch_size):
+        for _ in tqdm(range(epoch_size)):
 
             optimizer.zero_grad()
+
+            batch = train.random_batch(batch_size)
 
             x, y = encoder.batch_xy(batch)
             y_pred = regressor(x)
@@ -136,6 +141,46 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
         checkpoint(model_path, 'encoder', encoder, epoch)
         checkpoint(model_path, 'regressor', regressor, epoch)
+
+
+@cli.command()
+@click.argument('encoder_path', type=click.Path())
+@click.argument('regressor_path', type=click.Path())
+@click.argument('test_path', type=click.Path())
+@click.option('--test_skim', type=int, default=10000)
+@click.option('--map_source', default='cuda:0')
+@click.option('--map_target', default='cpu')
+def predict(encoder_path, regressor_path, test_path, test_skim,
+    map_source, map_target):
+    """Predict on dev / test.
+    """
+    encoder = torch.load(
+        encoder_path,
+        map_location={map_source: map_target},
+    )
+
+    regressor = torch.load(
+        regressor_path,
+        map_location={map_source: map_target},
+    )
+
+    test = Corpus(test_path, test_skim)
+
+    kts = []
+    correct = 0
+    for ab in tqdm(test.abstracts):
+
+        sents = encoder(Variable(ab.tensor()))
+        preds = regressor(sents).sort()[1].data.tolist()
+
+        kt, _ = stats.kendalltau(preds, range(len(preds)))
+        kts.append(kt)
+
+        if kt == 1:
+            correct += 1
+
+    print(sum(kts) / len(kts))
+    print(correct / len(test.abstracts))
 
 
 if __name__ == '__main__':
