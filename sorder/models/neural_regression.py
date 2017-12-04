@@ -170,7 +170,9 @@ def predict(encoder_path, regressor_path, test_path, test_skim,
     correct = 0
     for ab in tqdm(test.abstracts):
 
-        sents = encoder(Variable(ab.tensor()))
+        sents = Variable(ab.tensor()).type(ftype)
+        sents = encoder(sents)
+
         preds = regressor(sents).sort()[1].data.tolist()
 
         kt, _ = stats.kendalltau(preds, range(len(preds)))
