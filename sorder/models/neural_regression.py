@@ -2,12 +2,14 @@
 
 import click
 import torch
+import os
 
 from torch import nn
 from torch.autograd import Variable
 
 from sorder.cuda import CUDA, ftype, itype
 from sorder.abstracts import Corpus
+from sorder.utils import checkpoint
 
 
 class SentenceEncoder(nn.Module):
@@ -70,15 +72,22 @@ class Regressor(nn.Module):
         return y.squeeze()
 
 
-@click.command()
+@click.group()
+def cli():
+    pass
+
+
+@cli.command()
 @click.argument('train_path', type=click.Path())
+@click.argument('model_path', type=click.Path())
 @click.option('--train_skim', type=int, default=10000)
 @click.option('--lr', type=float, default=1e-4)
 @click.option('--epochs', type=int, default=50)
 @click.option('--epoch_size', type=int, default=100)
 @click.option('--batch_size', type=int, default=10)
 @click.option('--lstm_dim', type=int, default=1024)
-def main(train_path, train_skim, lr, epochs, epoch_size, batch_size, lstm_dim):
+def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
+        batch_size, lstm_dim):
 
     torch.manual_seed(1)
 
@@ -125,6 +134,9 @@ def main(train_path, train_skim, lr, epochs, epoch_size, batch_size, lstm_dim):
         print(epoch_loss)
         print(epoch_loss / first_loss)
 
+        checkpoint(model_path, 'encoder', encoder, epoch)
+        checkpoint(model_path, 'regressor', regressor, epoch)
+
 
 if __name__ == '__main__':
-    main()
+    cli()
