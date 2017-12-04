@@ -157,7 +157,9 @@ class Model(nn.Module):
 @click.option('--train_skim', type=int, default=10000)
 @click.option('--epochs', type=int, default=50)
 @click.option('--batch_size', type=int, default=64)
-def main(train_path, vectors_path, model_path, train_skim, epochs, batch_size):
+@click.option('--lr', type=float, default=1e-3)
+def main(train_path, vectors_path, model_path,
+    train_skim, epochs, batch_size, lr):
 
     load_vectors(vectors_path)
 
@@ -171,7 +173,7 @@ def main(train_path, vectors_path, model_path, train_skim, epochs, batch_size):
 
     params = list(sent_encoder.parameters()) + list(model.parameters())
 
-    optimizer = torch.optim.Adam(params, lr=1e-4)
+    optimizer = torch.optim.Adam(params, lr=lr)
 
     criterion = nn.BCELoss()
 
