@@ -23,7 +23,7 @@ class SentenceEncoder(nn.Module):
 
     def forward(self, x):
         _, (hn, cn) = self.lstm(x)
-        return hn.view(len(x), -1).squeeze()
+        return hn[-1].squeeze()
 
     def encode_batch(self, batch):
         """Encode sentences in an abstract batch.
@@ -102,7 +102,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     train = Corpus(train_path, train_skim)
 
     encoder = SentenceEncoder(lstm_dim, lstm_num_layers)
-    regressor = Regressor(lstm_dim*lstm_num_layers, lin_dim)
+    regressor = Regressor(lstm_dim, lin_dim)
 
     params = list(encoder.parameters()) + list(regressor.parameters())
     optimizer = torch.optim.Adam(params, lr=lr)
