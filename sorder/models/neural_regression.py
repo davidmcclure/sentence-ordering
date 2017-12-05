@@ -89,11 +89,11 @@ def cli():
 @click.argument('model_path', type=click.Path())
 @click.option('--train_skim', type=int, default=10000)
 @click.option('--lr', type=float, default=1e-4)
-@click.option('--epochs', type=int, default=50)
+@click.option('--epochs', type=int, default=100)
 @click.option('--epoch_size', type=int, default=100)
 @click.option('--batch_size', type=int, default=10)
-@click.option('--lstm_dim', type=int, default=512)
-@click.option('--lstm_num_layers', type=int, default=4)
+@click.option('--lstm_dim', type=int, default=1024)
+@click.option('--lstm_num_layers', type=int, default=2)
 @click.option('--lin_dim', type=int, default=512)
 def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     batch_size, lstm_dim, lstm_num_layers, lin_dim):
