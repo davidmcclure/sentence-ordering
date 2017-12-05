@@ -110,12 +110,16 @@ class ShuffledContextEncoder(nn.Module):
 
 class Regressor(nn.Module):
 
-    def __init__(self, input_dim=3000):
+    def __init__(self, input_dim=3000, lin_dim=1000):
         super().__init__()
-        self.out = nn.Linear(input_dim, 1)
+        self.lin1 = nn.Linear(input_dim, lin_dim)
+        self.lin2 = nn.Linear(lin_dim, lin_dim)
+        self.out = nn.Linear(lin_dim, 1)
 
     def forward(self, x):
-        y = self.out(x)
+        y = F.relu(self.lin1(x))
+        y = F.relu(self.lin2(y))
+        y = self.out(y)
         return y.squeeze()
 
 
