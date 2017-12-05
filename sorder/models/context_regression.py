@@ -31,11 +31,11 @@ class SentenceEncoder(nn.Module):
 
     def __init__(self, lstm_dim=1000):
         super().__init__()
-        self.lstm = nn.LSTM(300, lstm_dim, batch_first=True)
+        self.lstm = nn.LSTM(300, lstm_dim, 3, batch_first=True)
 
     def forward(self, x):
         _, (hn, cn) = self.lstm(x)
-        return hn.squeeze()
+        return hn[-1].squeeze()
 
     def encode_batch(self, batch):
         """List of Abstract -> list of (sent, dim) tensors.
@@ -62,11 +62,11 @@ class ShuffledContextEncoder(nn.Module):
 
     def __init__(self, input_dim=1000, lstm_dim=2000):
         super().__init__()
-        self.lstm = nn.LSTM(input_dim, lstm_dim, batch_first=True)
+        self.lstm = nn.LSTM(input_dim, lstm_dim, 3, batch_first=True)
 
     def forward(self, x):
         _, (hn, cn) = self.lstm(x)
-        return hn.squeeze()
+        return hn[-1].squeeze()
 
     def encode_batch(self, batch, maxlen=10):
         """List of (sent, dim) -> (abstract, dim).
@@ -114,11 +114,17 @@ class Regressor(nn.Module):
         super().__init__()
         self.lin1 = nn.Linear(input_dim, lin_dim)
         self.lin2 = nn.Linear(lin_dim, lin_dim)
+        self.lin3 = nn.Linear(lin_dim, lin_dim)
+        self.lin4 = nn.Linear(lin_dim, lin_dim)
+        self.lin5 = nn.Linear(lin_dim, lin_dim)
         self.out = nn.Linear(lin_dim, 1)
 
     def forward(self, x):
         y = F.relu(self.lin1(x))
         y = F.relu(self.lin2(y))
+        y = F.relu(self.lin3(y))
+        y = F.relu(self.lin4(y))
+        y = F.relu(self.lin5(y))
         y = self.out(y)
         return y.squeeze()
 
