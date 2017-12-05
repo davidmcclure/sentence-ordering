@@ -31,7 +31,7 @@ class SentenceEncoder(nn.Module):
 
     def __init__(self, lstm_dim=1000):
         super().__init__()
-        self.lstm = nn.LSTM(300, lstm_dim, 3, batch_first=True)
+        self.lstm = nn.LSTM(300, lstm_dim, 2, batch_first=True)
 
     def forward(self, x):
         _, (hn, cn) = self.lstm(x)
@@ -62,7 +62,7 @@ class ShuffledContextEncoder(nn.Module):
 
     def __init__(self, input_dim=1000, lstm_dim=2000):
         super().__init__()
-        self.lstm = nn.LSTM(input_dim, lstm_dim, 3, batch_first=True)
+        self.lstm = nn.LSTM(input_dim, lstm_dim, 2, batch_first=True)
 
     def forward(self, x):
         _, (hn, cn) = self.lstm(x)
@@ -115,16 +115,12 @@ class Regressor(nn.Module):
         self.lin1 = nn.Linear(input_dim, lin_dim)
         self.lin2 = nn.Linear(lin_dim, lin_dim)
         self.lin3 = nn.Linear(lin_dim, lin_dim)
-        self.lin4 = nn.Linear(lin_dim, lin_dim)
-        self.lin5 = nn.Linear(lin_dim, lin_dim)
         self.out = nn.Linear(lin_dim, 1)
 
     def forward(self, x):
         y = F.relu(self.lin1(x))
         y = F.relu(self.lin2(y))
         y = F.relu(self.lin3(y))
-        y = F.relu(self.lin4(y))
-        y = F.relu(self.lin5(y))
         y = self.out(y)
         return y.squeeze()
 
@@ -136,23 +132,25 @@ def cli():
 
 @cli.command()
 @click.argument('train_path', type=click.Path())
+@click.argument('model_path', type=click.Path())
 @click.option('--train_skim', type=int, default=10000)
 @click.option('--lr', type=float, default=1e-4)
 @click.option('--epochs', type=int, default=100)
 @click.option('--epoch_size', type=int, default=100)
 @click.option('--batch_size', type=int, default=10)
-def train(train_path, train_skim, lr, epochs, epoch_size, batch_size):
+def train(train_path, model_path, train_skim, lr, epochs,
+    epoch_size, batch_size):
     """Train model.
     """
     train = Corpus(train_path, train_skim)
 
-    s_encoder = SentenceEncoder()
-    c_encoder = ShuffledContextEncoder()
+    sent_encoder = SentenceEncoder()
+    context_encoder = ShuffledContextEncoder()
     regressor = Regressor()
 
     params = (
-        list(s_encoder.parameters()) +
-        list(c_encoder.parameters()) +
+        list(sent_encoder.parameters()) +
+        list(context_encoder.parameters()) +
         list(regressor.parameters())
     )
 
@@ -161,8 +159,8 @@ def train(train_path, train_skim, lr, epochs, epoch_size, batch_size):
     loss_func = nn.L1Loss()
 
     if CUDA:
-        s_encoder = s_encoder.cuda()
-        c_encoder = c_encoder.cuda()
+        sent_encoder = sent_encoder.cuda()
+        context_encoder = context_encoder.cuda()
         regressor = regressor.cuda()
 
     first_loss = None
@@ -176,9 +174,9 @@ def train(train_path, train_skim, lr, epochs, epoch_size, batch_size):
             optimizer.zero_grad()
 
             batch = train.random_batch(batch_size)
-            batch = list(s_encoder.encode_batch(batch))
+            batch = list(sent_encoder.encode_batch(batch))
 
-            x, y = c_encoder.batch_xy(batch)
+            x, y = context_encoder.batch_xy(batch)
             y_pred = regressor(x)
 
             loss = loss_func(y_pred, y)
@@ -195,6 +193,10 @@ def train(train_path, train_skim, lr, epochs, epoch_size, batch_size):
 
         print(epoch_loss)
         print(epoch_loss / first_loss)
+
+        checkpoint(model_path, 'sent_encoder', sent_encoder, epoch)
+        checkpoint(model_path, 'context_encoder', context_encoder, epoch)
+        checkpoint(model_path, 'regressor', regressor, epoch)
 
 
 if __name__ == '__main__':
