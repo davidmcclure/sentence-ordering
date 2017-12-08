@@ -68,6 +68,7 @@ class Sentence:
         # Pad zeros.
         x += [np.zeros(dim)] * pad
         x = x[:pad]
+        x = list(reversed(x))
         x = np.array(x)
         x = torch.from_numpy(x)
         x = x.float()
@@ -169,7 +170,7 @@ def cli():
 @click.argument('train_path', type=click.Path())
 @click.argument('model_path', type=click.Path())
 @click.option('--train_skim', type=int, default=10000)
-@click.option('--lr', type=float, default=1e-4)
+@click.option('--lr', type=float, default=1e-3)
 @click.option('--epochs', type=int, default=100)
 @click.option('--epoch_size', type=int, default=100)
 @click.option('--batch_size', type=int, default=10)
