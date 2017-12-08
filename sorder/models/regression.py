@@ -58,11 +58,13 @@ class Sentence:
 
     tokens = attr.ib()
 
-    def tensor(self, dim=300, pad=50):
+    def tensor(self, context, dim=300, pad=500):
         """Stack word vectors, padding zeros on left.
         """
+        tokens = self.tokens + context
+
         # Get word tensors and length.
-        x = [vectors[t] for t in self.tokens if t in vectors]
+        x = [vectors[t] for t in tokens if t in vectors]
         size = min(len(x), pad)
 
         # Pad zeros.
@@ -85,12 +87,21 @@ class Abstract:
         """
         return cls([Sentence(s['token']) for s in json['sentences']])
 
+    def shuffled_context(self):
+        """Shuffle sentences, return words.
+        """
+        sents = sorted(self.sentences, key=lambda x: np.random.rand())
+
+        return [t for s in sents for t in s.tokens]
+
     def xy(self):
         """Generate x,y pairs.
         """
+        context = self.shuffled_context()
+
         for i, s in enumerate(self.sentences):
 
-            x, size = s.tensor()
+            x, size = s.tensor(context)
 
             # Skip sentences with no mapped tokens.
             if (size):
