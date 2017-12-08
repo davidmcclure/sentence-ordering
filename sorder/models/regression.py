@@ -146,14 +146,18 @@ class Corpus:
 
 class Model(nn.Module):
 
-    def __init__(self, lstm_dim):
+    def __init__(self, lstm_dim, num_layers):
         super().__init__()
-        self.lstm = nn.LSTM(300, lstm_dim, batch_first=True)
-        self.out = nn.Linear(lstm_dim, 1)
+
+        self.lstm = nn.LSTM(300, lstm_dim, batch_first=True,
+            bidirectional=True, num_layers=num_layers)
+
+        self.out = nn.Linear(lstm_dim*num_layers*2, 1)
 
     def forward(self, x):
         _, (hn, cn) = self.lstm(x)
-        return self.out(hn.squeeze()).squeeze()
+        hn = hn.view(hn.data.shape[1], -1)
+        return self.out(hn).squeeze()
 
 
 @click.group()
@@ -170,13 +174,14 @@ def cli():
 @click.option('--epoch_size', type=int, default=100)
 @click.option('--batch_size', type=int, default=10)
 @click.option('--lstm_dim', type=int, default=1024)
+@click.option('--lstm_num_layers', type=int, default=4)
 def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
-    batch_size, lstm_dim):
+    batch_size, lstm_dim, lstm_num_layers):
     """Train model.
     """
     train = Corpus(train_path, train_skim)
 
-    model = Model(lstm_dim)
+    model = Model(lstm_dim, lstm_num_layers)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
