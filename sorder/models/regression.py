@@ -48,13 +48,9 @@ def pack(tensor, sizes, batch_first=True):
     sorted_tensor = Variable(tensor[torch.LongTensor(len_sort)])
     sorted_sizes = np.array(sizes)[len_sort].tolist()
 
-    # Pack.
     packed = pack_padded_sequence(sorted_tensor, sorted_sizes, batch_first)
 
-    # Get indexing tensor to restore the order.
-    reorder = torch.LongTensor(np.argsort(len_sort))
-
-    return packed, reorder
+    return packed, len_sort
 
 
 @attr.s
@@ -93,9 +89,13 @@ class Abstract:
         """Generate x,y pairs.
         """
         for i, s in enumerate(self.sentences):
+
             x, size = s.tensor()
-            y = i / (len(self.sentences)-1)
-            yield x, size, y
+
+            # Skip sentences with no mapped tokens.
+            if (size):
+                y = i / (len(self.sentences)-1)
+                yield x, size, y
 
 
 @attr.s
@@ -116,15 +116,16 @@ class Batch:
             yield from ab.xy()
 
     def xy_tensors(self):
-        """Generate x + y tensors
+        """Generate (packed) x + y tensors
         """
         x, size, y = zip(*self.xy())
-        return x, size, y
 
-        # x = Variable(torch.stack(x)).type(ftype)
-        # y = Variable(torch.FloatTensor(y)).type(ftype)
+        x, len_sort = pack(torch.stack(x), size)
 
-        # return x, y
+        y = np.array(y)[len_sort]
+        y = Variable(torch.FloatTensor(y)).type(ftype)
+
+        return x, y
 
 
 class Corpus:
