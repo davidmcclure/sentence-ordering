@@ -41,18 +41,16 @@ def read_abstracts(path, maxlen):
 def pack(tensor, sizes, batch_first=True):
     """Pack padded tensors, provide reorder indexes.
     """
-    # Indexes to sort tensor by length.
-    len_sort = np.argsort(sizes)[::-1].tolist()
+    # Get indexes for sorted sizes.
+    size_sort = np.argsort(sizes)[::-1].tolist()
 
-    # Sort lengths decreasing.
-    sizes = np.array(sizes)[len_sort].tolist()
-
-    # Sort the tensor by length.
-    tensor = tensor[torch.LongTensor(len_sort)].type(ftype)
+    # Sort the tensor / sizes.
+    tensor = tensor[torch.LongTensor(size_sort)].type(ftype)
+    sizes = np.array(sizes)[size_sort].tolist()
 
     packed = pack_padded_sequence(Variable(tensor), sizes, batch_first)
 
-    return packed, len_sort
+    return packed, size_sort
 
 
 @attr.s
