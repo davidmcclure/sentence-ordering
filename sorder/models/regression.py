@@ -125,7 +125,7 @@ class Batch:
         y = np.array(y)[len_sort]
         y = Variable(torch.FloatTensor(y)).type(ftype)
 
-        return x, y
+        return x, y, len_sort
 
 
 class Corpus:
@@ -203,7 +203,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             batch = train.random_batch(batch_size)
 
-            x, y = batch.xy_tensors()
+            x, y, _ = batch.xy_tensors()
 
             y_pred = model(x)
 
@@ -239,9 +239,11 @@ def predict(model_path, test_path, test_skim, map_source, map_target):
     for ab in tqdm(test.abstracts):
 
         batch = Batch([ab])
-        x, y = batch.xy_tensors()
+        x, y, len_sort = batch.xy_tensors()
+        reorder = np.argsort(len_sort)
 
         preds = model(x).sort()[1].data.tolist()
+        preds = np.array(preds)[reorder]
 
         kt, _ = stats.kendalltau(preds, range(len(preds)))
         kts.append(kt)
