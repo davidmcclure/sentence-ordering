@@ -183,31 +183,21 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             epoch_loss += loss.data[0]
 
-        epoch_loss /= epoch_size
-        print(epoch_loss)
-
-        # checkpoint(model_path, 'encoder', encoder, epoch)
-        # checkpoint(model_path, 'regressor', regressor, epoch)
+        checkpoint(model_path, 'model', model, epoch)
+        print(epoch_loss / epoch_size)
 
 
 @cli.command()
-@click.argument('encoder_path', type=click.Path())
-@click.argument('regressor_path', type=click.Path())
+@click.argument('model_path', type=click.Path())
 @click.argument('test_path', type=click.Path())
 @click.option('--test_skim', type=int, default=10000)
-@click.option('--map_source', default='cuda:0')
+@click.option('--map_source', default='cpu')
 @click.option('--map_target', default='cpu')
-def predict(encoder_path, regressor_path, test_path, test_skim,
-    map_source, map_target):
+def predict(model_path, test_path, test_skim, map_source, map_target):
     """Predict on dev / test.
     """
-    encoder = torch.load(
-        encoder_path,
-        map_location={map_source: map_target},
-    )
-
-    regressor = torch.load(
-        regressor_path,
+    model = torch.load(
+        model_path,
         map_location={map_source: map_target},
     )
 
@@ -217,10 +207,10 @@ def predict(encoder_path, regressor_path, test_path, test_skim,
     correct = 0
     for ab in tqdm(test.abstracts):
 
-        sents = Variable(ab.tensor()).type(ftype)
-        sents = encoder(sents)
+        batch = Batch([ab])
+        x, y = batch.xy_tensors()
 
-        preds = regressor(sents).sort()[1].data.tolist()
+        preds = model(x).sort()[1].data.tolist()
 
         kt, _ = stats.kendalltau(preds, range(len(preds)))
         kts.append(kt)
