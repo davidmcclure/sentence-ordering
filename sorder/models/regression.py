@@ -15,6 +15,7 @@ from glob import glob
 from scipy import stats
 
 from torch import nn
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.autograd import Variable
 from torch.nn import functional as F
 
@@ -37,6 +38,25 @@ def read_abstracts(path, maxlen):
                     yield Abstract.from_json(json)
 
 
+def pack(tensor, sizes, batch_first=True):
+    """Pack padded tensors, provide reorder indexes.
+    """
+    # Indexes to sort tensor by length, descending.
+    len_sort = np.argsort(sizes)[::-1].tolist()
+
+    # Sort the tensor by length, get sorted sizes.
+    sorted_tensor = Variable(tensor[torch.LongTensor(len_sort)])
+    sorted_sizes = np.array(sizes)[len_sort].tolist()
+
+    # Pack.
+    packed = pack_padded_sequence(sorted_tensor, sorted_sizes, batch_first)
+
+    # Get indexing tensor to restore the order.
+    reorder = torch.LongTensor(np.argsort(len_sort))
+
+    return packed, reorder
+
+
 @attr.s
 class Sentence:
 
@@ -45,14 +65,17 @@ class Sentence:
     def tensor(self, dim=300, pad=50):
         """Stack word vectors, padding zeros on left.
         """
+        # Get word tensors and length.
         x = [vectors[t] for t in self.tokens if t in vectors]
+        size = len(x)
+
+        # Pad zeros.
         x += [np.zeros(dim)] * pad
         x = x[:pad]
-        x = list(reversed(x))
         x = np.array(x)
         x = torch.from_numpy(x)
         x = x.float()
-        return x
+        return x, size
 
 
 @attr.s
@@ -70,8 +93,9 @@ class Abstract:
         """Generate x,y pairs.
         """
         for i, s in enumerate(self.sentences):
+            x, size = s.tensor()
             y = i / (len(self.sentences)-1)
-            yield s.tensor(), y
+            yield x, size, y
 
 
 @attr.s
@@ -94,12 +118,13 @@ class Batch:
     def xy_tensors(self):
         """Generate x + y tensors
         """
-        x, y = zip(*self.xy())
+        x, size, y = zip(*self.xy())
+        return x, size, y
 
-        x = Variable(torch.stack(x)).type(ftype)
-        y = Variable(torch.FloatTensor(y)).type(ftype)
+        # x = Variable(torch.stack(x)).type(ftype)
+        # y = Variable(torch.FloatTensor(y)).type(ftype)
 
-        return x, y
+        # return x, y
 
 
 class Corpus:
