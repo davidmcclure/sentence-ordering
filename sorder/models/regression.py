@@ -96,8 +96,8 @@ class Batch:
         """
         x, y = zip(*self.xy())
 
-        x = Variable(torch.stack(x))
-        y = Variable(torch.FloatTensor(y))
+        x = Variable(torch.stack(x)).type(ftype)
+        y = Variable(torch.FloatTensor(y)).type(ftype)
 
         return x, y
 
