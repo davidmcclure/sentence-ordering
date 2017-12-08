@@ -63,12 +63,11 @@ class Sentence:
         """
         # Get word tensors and length.
         x = [vectors[t] for t in self.tokens if t in vectors]
-        size = len(x)
+        size = min(len(x), pad)
 
         # Pad zeros.
         x += [np.zeros(dim)] * pad
         x = x[:pad]
-        x = list(reversed(x))
         x = np.array(x)
         x = torch.from_numpy(x)
         x = x.float()
@@ -153,11 +152,11 @@ class Model(nn.Module):
         self.lstm = nn.LSTM(300, lstm_dim, batch_first=True,
             num_layers=num_layers, bidirectional=True)
 
-        self.out = nn.Linear(lstm_dim*num_layers*2, 1)
+        self.out = nn.Linear(lstm_dim, 1)
 
     def forward(self, x):
         _, (hn, cn) = self.lstm(x)
-        hn = hn.view(hn.data.shape[1], -1)
+        hn = hn[-1].squeeze()
         return self.out(hn).squeeze()
 
 
