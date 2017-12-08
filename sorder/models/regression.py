@@ -66,15 +66,16 @@ class Abstract:
         """
         return cls([Sentence(s['token']) for s in json['sentences']])
 
-    def tensor(self):
-        """Stack sentence tensors.
+    def xy(self):
+        """Generate x,y pairs.
         """
-        tensors = [s.tensor() for s in self.sentences]
-        return torch.stack(tensors)
+        for i, s in enumerate(self.sentences):
+            y = i / (len(self.sentences)-1)
+            yield s.tensor(), y
 
 
 @attr.s
-class AbstractBatch:
+class Batch:
 
     abstracts = attr.ib()
 
@@ -83,6 +84,22 @@ class AbstractBatch:
         """
         tensors = [a.tensor() for a in self.abstracts]
         return torch.cat(tensors)
+
+    def xy(self):
+        """Generate x, y pairs.
+        """
+        for ab in self.abstracts:
+            yield from ab.xy()
+
+    def xy_tensors(self):
+        """Generate x + y tensors
+        """
+        x, y = zip(*self.xy())
+
+        x = Variable(torch.stack(x))
+        y = Variable(torch.FloatTensor(y))
+
+        return x, y
 
 
 class Corpus:
@@ -98,70 +115,19 @@ class Corpus:
         self.abstracts = list(tqdm(reader, total=skim))
 
     def random_batch(self, size):
-        return random.sample(self.abstracts, size)
-
-    def batches(self, size):
-        yield from chunked_iter(self.abstracts, size)
+        return Batch(random.sample(self.abstracts, size))
 
 
-class SentenceEncoder(nn.Module):
+class Model(nn.Module):
 
     def __init__(self, lstm_dim):
         super().__init__()
         self.lstm = nn.LSTM(300, lstm_dim, batch_first=True)
+        self.out = nn.Linear(lstm_dim, 1)
 
     def forward(self, x):
         _, (hn, cn) = self.lstm(x)
-        return hn.squeeze()
-
-    def encode_batch(self, batch):
-        """Encode sentences in an abstract batch.
-
-        Args:
-            batch (list of Abstract)
-
-        Yields: Unpacked tensors for each abstract.
-        """
-        # Combine sentences into single batch.
-        x = torch.cat([a.tensor() for a in batch])
-        x = Variable(x).type(ftype)
-
-        y = self(x)
-
-        # Unpack into separate tensor for each abstract.
-        start = 0
-        for a in batch:
-            yield y[start:start+len(a.sentences)]
-            start += len(a.sentences)
-
-    def batch_xy(self, batch):
-        """Given a batch, encode sentences and make x/y training pairs.
-
-        Args:
-            batch (list of Abstract)
-        """
-        x = []
-        y = []
-        for a in self.encode_batch(batch):
-            for i in range(len(a)):
-                x.append(a[i])
-                y.append(i / (len(a)-1))
-
-        x = torch.stack(x)
-        y = Variable(torch.FloatTensor(y)).type(ftype)
-
-        return x, y
-
-
-class Regressor(nn.Module):
-
-    def __init__(self, input_dim):
-        super().__init__()
-        self.out = nn.Linear(input_dim, 1)
-
-    def forward(self, x):
-        y = self.out(x)
-        return y.squeeze()
+        return self.out(hn.squeeze()).squeeze()
 
 
 @click.group()
@@ -184,17 +150,14 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     """
     train = Corpus(train_path, train_skim)
 
-    encoder = SentenceEncoder(lstm_dim)
-    regressor = Regressor(lstm_dim)
+    model = Model(lstm_dim)
 
-    params = list(encoder.parameters()) + list(regressor.parameters())
-    optimizer = torch.optim.Adam(params, lr=lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     loss_func = nn.L1Loss()
 
     if CUDA:
-        encoder = encoder.cuda()
-        regressor = regressor.cuda()
+        model = model.cuda()
         loss_func = loss_func.cuda()
 
     first_loss = None
@@ -209,8 +172,9 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             batch = train.random_batch(batch_size)
 
-            x, y = encoder.batch_xy(batch)
-            y_pred = regressor(x)
+            x, y = batch.xy_tensors()
+
+            y_pred = model(x)
 
             loss = loss_func(y_pred, y)
             loss.backward()
@@ -220,15 +184,10 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
             epoch_loss += loss.data[0]
 
         epoch_loss /= epoch_size
-
-        if not first_loss:
-            first_loss = epoch_loss
-
         print(epoch_loss)
-        print(epoch_loss / first_loss)
 
-        checkpoint(model_path, 'encoder', encoder, epoch)
-        checkpoint(model_path, 'regressor', regressor, epoch)
+        # checkpoint(model_path, 'encoder', encoder, epoch)
+        # checkpoint(model_path, 'regressor', regressor, epoch)
 
 
 @cli.command()
