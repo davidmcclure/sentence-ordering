@@ -105,11 +105,11 @@ class Abstract:
 
         # First.
         x, size = sents[0].tensor(context)
-        yield x, size, 1
+        if size: yield x, size, 1
 
         # Not first.
         x, size = random.choice(sents[1:]).tensor(context)
-        yield x, size, 0
+        if size: yield x, size, 0
 
 
 @attr.s
@@ -187,7 +187,7 @@ def cli():
 @click.option('--epochs', type=int, default=100)
 @click.option('--epoch_size', type=int, default=100)
 @click.option('--batch_size', type=int, default=10)
-@click.option('--lstm_dim', type=int, default=150)
+@click.option('--lstm_dim', type=int, default=1000)
 @click.option('--lstm_num_layers', type=int, default=1)
 def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     batch_size, lstm_dim, lstm_num_layers):
