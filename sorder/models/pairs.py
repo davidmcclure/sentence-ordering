@@ -165,12 +165,14 @@ class SentenceEncoder(nn.Module):
 
                 s3 = ab[random.choice(s3r)]
 
+                context = ab.mean(0)
+
                 # Next.
-                x.append(torch.cat([s1, s2]))
+                x.append(torch.cat([context, s1, s2]))
                 y.append(1)
 
                 # Not next.
-                x.append(torch.cat([s1, s3]))
+                x.append(torch.cat([context, s1, s3]))
                 y.append(0)
 
         x = torch.stack(x)
@@ -216,7 +218,7 @@ def train(train_path, model_path, train_skim, lr, epochs,
     train = Corpus(train_path, train_skim)
 
     m1 = SentenceEncoder(lstm_dim)
-    m2 = Regressor(lstm_dim*2, lin_dim)
+    m2 = Regressor(lstm_dim*3, lin_dim)
 
     params = list(m1.parameters()) + list(m2.parameters())
     optimizer = torch.optim.Adam(params, lr=lr)
