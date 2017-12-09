@@ -50,9 +50,11 @@ class Sentence:
     def tensor(self, dim=300, pad=50):
         """Stack word vectors, padding zeros on left.
         """
-        # Get word tensors and length.
-        x = [vectors[t] for t in self.tokens if t in vectors]
-        size = min(len(x), pad)
+        # Map words to embeddings.
+        x = [
+            vectors[t] if t in vectors else np.zeros(dim)
+            for t in self.tokens
+        ]
 
         # Pad zeros.
         x += [np.zeros(dim)] * pad
@@ -60,7 +62,8 @@ class Sentence:
         x = np.array(x)
         x = torch.from_numpy(x)
         x = x.float()
-        return x, size
+
+        return x, len(self.tokens)
 
 
 @attr.s
@@ -90,12 +93,7 @@ class Batch:
         """
         for ab in self.abstracts:
             for sent in ab.sentences:
-
-                tensor, size = sent.tensor()
-
-                # Discard all-OOV sentences.
-                if size:
-                    yield tensor, size
+                yield sent.tensor()
 
     def packed_sentence_tensor(self):
         """Stack sentence tensors for all abstracts.
