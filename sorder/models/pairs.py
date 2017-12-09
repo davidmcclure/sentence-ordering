@@ -198,11 +198,12 @@ def cli():
 @click.argument('train_path', type=click.Path())
 @click.argument('model_path', type=click.Path())
 @click.option('--train_skim', type=int, default=10000)
+@click.option('--lr', type=float, default=1e-3)
 @click.option('--epochs', type=int, default=1000)
 @click.option('--epoch_size', type=int, default=100)
 @click.option('--batch_size', type=int, default=10)
 @click.option('--lstm_dim', type=int, default=500)
-def train(train_path, model_path, train_skim, epochs,
+def train(train_path, model_path, train_skim, lr, epochs,
     epoch_size, batch_size, lstm_dim):
     """Train model.
     """
@@ -212,7 +213,7 @@ def train(train_path, model_path, train_skim, epochs,
     m2 = Regressor(lstm_dim*2)
 
     params = list(m1.parameters()) + list(m2.parameters())
-    optimizer = torch.optim.Adam(params, lr=1e-3)
+    optimizer = torch.optim.Adam(params, lr=lr)
 
     loss_func = nn.BCELoss()
 
