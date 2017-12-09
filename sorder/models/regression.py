@@ -210,6 +210,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
         print(f'\nEpoch {epoch}')
 
+        epoch_correct = 0
         epoch_loss = 0
         for _ in tqdm(range(epoch_size)):
 
@@ -226,10 +227,13 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             optimizer.step()
 
+            epoch_correct += (y_pred.round() == y).sum().data[0]
             epoch_loss += loss.data[0]
 
         checkpoint(model_path, 'model', model, epoch)
+
         print(epoch_loss / epoch_size)
+        print(epoch_correct / (epoch_size*batch_size*2))
 
 
 @cli.command()
