@@ -100,3 +100,37 @@ class Corpus:
 
     def random_batch(self, size):
         return Batch(random.sample(self.abstracts, size))
+
+
+@click.group()
+def cli():
+    pass
+
+
+@cli.command()
+@click.argument('train_path', type=click.Path())
+@click.option('--train_skim', type=int, default=10000)
+@click.option('--epochs', type=int, default=1000)
+@click.option('--epoch_size', type=int, default=100)
+@click.option('--batch_size', type=int, default=10)
+def train(train_path, train_skim, epochs, epoch_size, batch_size):
+    """Train model.
+    """
+    train = Corpus(train_path, train_skim)
+
+    for epoch in range(epochs):
+
+        print(f'\nEpoch {epoch}')
+
+        for _ in tqdm(range(epoch_size)):
+
+            batch = train.random_batch(batch_size)
+            print(batch)
+
+            # encode sentences in batch
+            # generate pos/neg xy pairs
+            # predict 0/1
+
+
+if __name__ == '__main__':
+    cli()
