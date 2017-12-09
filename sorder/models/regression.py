@@ -56,6 +56,7 @@ def pack(tensor, sizes, batch_first=True):
 @attr.s
 class Sentence:
 
+    order = attr.ib()
     tokens = attr.ib()
 
     def tensor(self, context, dim=300, pad=500):
@@ -85,7 +86,10 @@ class Abstract:
     def from_json(cls, json):
         """Pull out raw token series.
         """
-        return cls([Sentence(s['token']) for s in json['sentences']])
+        return cls([
+            Sentence(i, s['token'])
+            for i, s in enumerate(json['sentences'])
+        ])
 
     def shuffled_context(self):
         """Shuffle sentences, return words.
@@ -240,7 +244,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 @click.argument('model_path', type=click.Path())
 @click.argument('test_path', type=click.Path())
 @click.option('--test_skim', type=int, default=10000)
-@click.option('--map_source', default='cpu')
+@click.option('--map_source', default='cuda:0')
 @click.option('--map_target', default='cpu')
 def predict(model_path, test_path, test_skim, map_source, map_target):
     """Predict on dev / test.
@@ -252,25 +256,7 @@ def predict(model_path, test_path, test_skim, map_source, map_target):
 
     test = Corpus(test_path, test_skim)
 
-    kts = []
-    correct = 0
-    for ab in tqdm(test.abstracts):
-
-        batch = Batch([ab])
-        x, y, len_sort = batch.xy_tensors()
-        reorder = np.argsort(len_sort)
-
-        preds = model(x).sort()[1].data.tolist()
-        preds = np.array(preds)[reorder]
-
-        kt, _ = stats.kendalltau(preds, range(len(preds)))
-        kts.append(kt)
-
-        if kt == 1:
-            correct += 1
-
-    print(sum(kts) / len(kts))
-    print(correct / len(test.abstracts))
+    print(model)
 
 
 if __name__ == '__main__':
