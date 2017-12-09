@@ -48,7 +48,7 @@ class Sentence:
 
     tokens = attr.ib()
 
-    def tensor(self, dim=300, pad=1000):
+    def tensor(self, dim=300, pad=500):
         """Stack word vectors, padding zeros on left.
         """
         # Map words to embeddings.
