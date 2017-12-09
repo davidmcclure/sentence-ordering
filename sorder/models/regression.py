@@ -160,18 +160,24 @@ class Corpus:
 
 class Model(nn.Module):
 
-    def __init__(self, lstm_dim, num_layers):
+    def __init__(self, lstm_dim, num_layers, lin_dim):
         super().__init__()
 
         self.lstm = nn.LSTM(300, lstm_dim, batch_first=True,
             num_layers=num_layers, bidirectional=True)
 
-        self.out = nn.Linear(lstm_dim, 1)
+        self.lin1 = nn.Linear(lstm_dim, lin_dim)
+        self.lin2 = nn.Linear(lin_dim, lin_dim)
+
+        self.out = nn.Linear(lin_dim, 1)
 
     def forward(self, x):
         _, (hn, cn) = self.lstm(x)
-        hn = hn[-1].squeeze()
-        return F.sigmoid(self.out(hn).squeeze())
+        y = hn[-1].squeeze()
+        y = F.relu(self.lin1(y))
+        y = F.relu(self.lin2(y))
+        y = F.sigmoid(self.out(y))
+        return y.squeeze()
 
 
 @click.group()
@@ -186,16 +192,17 @@ def cli():
 @click.option('--lr', type=float, default=1e-3)
 @click.option('--epochs', type=int, default=100)
 @click.option('--epoch_size', type=int, default=100)
-@click.option('--batch_size', type=int, default=10)
-@click.option('--lstm_dim', type=int, default=1000)
-@click.option('--lstm_num_layers', type=int, default=1)
+@click.option('--batch_size', type=int, default=50)
+@click.option('--lstm_dim', type=int, default=512)
+@click.option('--lstm_num_layers', type=int, default=2)
+@click.option('--lin_dim', type=int, default=256)
 def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
-    batch_size, lstm_dim, lstm_num_layers):
+    batch_size, lstm_dim, lstm_num_layers, lin_dim):
     """Train model.
     """
     train = Corpus(train_path, train_skim)
 
-    model = Model(lstm_dim, lstm_num_layers)
+    model = Model(lstm_dim, lstm_num_layers, lin_dim)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
