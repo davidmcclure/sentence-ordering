@@ -181,12 +181,17 @@ class SentenceEncoder(nn.Module):
 
 class Regressor(nn.Module):
 
-    def __init__(self, input_dim):
+    def __init__(self, input_dim, lin_dim):
         super().__init__()
-        self.out = nn.Linear(input_dim, 1)
+        self.lin1 = nn.Linear(input_dim, lin_dim)
+        self.lin2 = nn.Linear(lin_dim, lin_dim)
+        self.out = nn.Linear(lin_dim, 1)
 
     def forward(self, x):
-        return F.sigmoid(self.out(x)).squeeze()
+        y = F.relu(self.lin1(x))
+        y = F.relu(self.lin2(y))
+        y = F.sigmoid(self.out(y))
+        return y.squeeze()
 
 
 @click.group()
@@ -203,14 +208,15 @@ def cli():
 @click.option('--epoch_size', type=int, default=100)
 @click.option('--batch_size', type=int, default=10)
 @click.option('--lstm_dim', type=int, default=500)
+@click.option('--lin_dim', type=int, default=300)
 def train(train_path, model_path, train_skim, lr, epochs,
-    epoch_size, batch_size, lstm_dim):
+    epoch_size, batch_size, lstm_dim, lin_dim):
     """Train model.
     """
     train = Corpus(train_path, train_skim)
 
     m1 = SentenceEncoder(lstm_dim)
-    m2 = Regressor(lstm_dim*2)
+    m2 = Regressor(lstm_dim*2, lin_dim)
 
     params = list(m1.parameters()) + list(m2.parameters())
     optimizer = torch.optim.Adam(params, lr=lr)
