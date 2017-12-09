@@ -56,13 +56,16 @@ def pack(tensor, sizes, batch_first=True):
 @attr.s
 class Sentence:
 
+    order = attr.ib()
     tokens = attr.ib()
 
-    def tensor(self, dim=300, pad=50):
+    def tensor(self, context, dim=300, pad=500):
         """Stack word vectors, padding zeros on left.
         """
+        tokens = self.tokens + context
+
         # Get word tensors and length.
-        x = [vectors[t] for t in self.tokens if t in vectors]
+        x = [vectors[t] for t in tokens if t in vectors]
         size = min(len(x), pad)
 
         # Pad zeros.
@@ -83,19 +86,53 @@ class Abstract:
     def from_json(cls, json):
         """Pull out raw token series.
         """
-        return cls([Sentence(s['token']) for s in json['sentences']])
+        return cls([
+            Sentence(i, s['token'])
+            for i, s in enumerate(json['sentences'])
+        ])
+
+    def shuffle(self):
+        """Shuffle sentences, return words.
+        """
+        random.shuffle(self.sentences)
+
+    def tokens(self):
+        """Get list of all tokens.
+        """
+        return [t for s in self.sentences for t in s.tokens]
 
     def xy(self):
         """Generate x,y pairs.
         """
-        for i, s in enumerate(self.sentences):
+        start_idx = random.randint(0, len(self.sentences)-2)
+        sents = self.sentences[start_idx:]
 
-            x, size = s.tensor()
+        shuffled_sents = sorted(sents, key=lambda x: np.random.rand())
+        context = [t for s in shuffled_sents for t in s.tokens]
 
-            # Skip sentences with no mapped tokens.
-            if (size):
-                y = i / (len(self.sentences)-1)
-                yield x, size, y
+        # First.
+        x, size = sents[0].tensor(context)
+        if size: yield x, size, 1
+
+        # Not first.
+        x, size = random.choice(sents[1:]).tensor(context)
+        if size: yield x, size, 0
+
+    def predict_first(self, model):
+        """Pop first sentence.
+        """
+        context = self.tokens()
+
+        x, size = zip(*[s.tensor(context) for s in self.sentences])
+        x, len_sort = pack(torch.stack(x), size)
+
+        pred = model(x)
+        pred = np.array(pred.data.tolist())
+
+        reorder = np.argsort(len_sort)
+        pred = pred[reorder]
+
+        return self.sentences.pop(pred.argmax())
 
 
 @attr.s
@@ -122,10 +159,10 @@ class Batch:
 
         x, len_sort = pack(torch.stack(x), size)
 
-        y = np.array(y)[len_sort]
+        y = np.array(y)[len_sort].tolist()
         y = Variable(torch.FloatTensor(y)).type(ftype)
 
-        return x, y, len_sort
+        return x, y
 
 
 class Corpus:
@@ -146,18 +183,18 @@ class Corpus:
 
 class Model(nn.Module):
 
-    def __init__(self, lstm_dim, num_layers):
+    def __init__(self, lstm_dim):
         super().__init__()
 
         self.lstm = nn.LSTM(300, lstm_dim, batch_first=True,
-            num_layers=num_layers, bidirectional=True)
+            bidirectional=True)
 
         self.out = nn.Linear(lstm_dim, 1)
 
     def forward(self, x):
         _, (hn, cn) = self.lstm(x)
         hn = hn[-1].squeeze()
-        return self.out(hn).squeeze()
+        return F.sigmoid(self.out(hn).squeeze())
 
 
 @click.group()
@@ -168,24 +205,23 @@ def cli():
 @cli.command()
 @click.argument('train_path', type=click.Path())
 @click.argument('model_path', type=click.Path())
-@click.option('--train_skim', type=int, default=10000)
+@click.option('--train_skim', type=int, default=500000)
 @click.option('--lr', type=float, default=1e-3)
-@click.option('--epochs', type=int, default=100)
+@click.option('--epochs', type=int, default=1000)
 @click.option('--epoch_size', type=int, default=100)
 @click.option('--batch_size', type=int, default=10)
-@click.option('--lstm_dim', type=int, default=150)
-@click.option('--lstm_num_layers', type=int, default=1)
+@click.option('--lstm_dim', type=int, default=1000)
 def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
-    batch_size, lstm_dim, lstm_num_layers):
+    batch_size, lstm_dim):
     """Train model.
     """
     train = Corpus(train_path, train_skim)
 
-    model = Model(lstm_dim, lstm_num_layers)
+    model = Model(lstm_dim)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    loss_func = nn.L1Loss()
+    loss_func = nn.BCELoss()
 
     if CUDA:
         model = model.cuda()
@@ -196,6 +232,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
         print(f'\nEpoch {epoch}')
 
+        epoch_correct = 0
         epoch_loss = 0
         for _ in tqdm(range(epoch_size)):
 
@@ -203,7 +240,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             batch = train.random_batch(batch_size)
 
-            x, y, _ = batch.xy_tensors()
+            x, y, = batch.xy_tensors()
 
             y_pred = model(x)
 
@@ -212,17 +249,20 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             optimizer.step()
 
+            epoch_correct += (y_pred.round() == y).sum().data[0]
             epoch_loss += loss.data[0]
 
         checkpoint(model_path, 'model', model, epoch)
+
         print(epoch_loss / epoch_size)
+        print(epoch_correct / (epoch_size*batch_size*2))
 
 
 @cli.command()
 @click.argument('model_path', type=click.Path())
 @click.argument('test_path', type=click.Path())
 @click.option('--test_skim', type=int, default=10000)
-@click.option('--map_source', default='cpu')
+@click.option('--map_source', default='cuda:0')
 @click.option('--map_target', default='cpu')
 def predict(model_path, test_path, test_skim, map_source, map_target):
     """Predict on dev / test.
@@ -234,25 +274,26 @@ def predict(model_path, test_path, test_skim, map_source, map_target):
 
     test = Corpus(test_path, test_skim)
 
-    kts = []
     correct = 0
+    kts = []
     for ab in tqdm(test.abstracts):
 
-        batch = Batch([ab])
-        x, y, len_sort = batch.xy_tensors()
-        reorder = np.argsort(len_sort)
+        ab.shuffle()
 
-        preds = model(x).sort()[1].data.tolist()
-        preds = np.array(preds)[reorder]
+        sents = []
+        while ab.sentences:
+            sents.append(ab.predict_first(model))
 
-        kt, _ = stats.kendalltau(preds, range(len(preds)))
+        pred = [s.order for s in sents]
+
+        kt, _ = stats.kendalltau(pred, range(len(pred)))
         kts.append(kt)
 
         if kt == 1:
             correct += 1
 
     print(sum(kts) / len(kts))
-    print(correct / len(test.abstracts))
+    print(correct / len(kts))
 
 
 if __name__ == '__main__':
