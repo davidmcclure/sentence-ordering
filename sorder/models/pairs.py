@@ -225,6 +225,8 @@ def train(train_path, model_path, train_skim, epochs,
         print(f'\nEpoch {epoch}')
 
         epoch_loss = 0
+        epoch_correct = 0
+        epoch_total = 0
         for _ in tqdm(range(epoch_size)):
 
             optimizer.zero_grad()
@@ -241,8 +243,11 @@ def train(train_path, model_path, train_skim, epochs,
             optimizer.step()
 
             epoch_loss += loss.data[0]
+            epoch_correct += (y_pred.round() == y).sum().data[0]
+            epoch_total += len(y)
 
         print(epoch_loss / epoch_size)
+        print(epoch_correct / epoch_total)
 
 
 if __name__ == '__main__':
