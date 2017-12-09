@@ -97,16 +97,19 @@ class Abstract:
     def xy(self):
         """Generate x,y pairs.
         """
-        context = self.shuffled_context()
+        start_idx = random.randint(0, len(self.sentences)-2)
+        sents = self.sentences[start_idx:]
 
-        for i, s in enumerate(self.sentences):
+        shuffled_sents = sorted(sents, key=lambda x: np.random.rand())
+        context = [t for s in shuffled_sents for t in s.tokens]
 
-            x, size = s.tensor(context)
+        # First.
+        x, size = sents[0].tensor(context)
+        yield x, size, 1
 
-            # Skip sentences with no mapped tokens.
-            if (size):
-                y = i / (len(self.sentences)-1)
-                yield x, size, y
+        # Not first.
+        x, size = random.choice(sents[1:]).tensor(context)
+        yield x, size, 0
 
 
 @attr.s
@@ -133,10 +136,10 @@ class Batch:
 
         x, len_sort = pack(torch.stack(x), size)
 
-        y = np.array(y)[len_sort]
+        y = np.array(y)[len_sort].tolist()
         y = Variable(torch.FloatTensor(y)).type(ftype)
 
-        return x, y, len_sort
+        return x, y
 
 
 class Corpus:
@@ -168,7 +171,7 @@ class Model(nn.Module):
     def forward(self, x):
         _, (hn, cn) = self.lstm(x)
         hn = hn[-1].squeeze()
-        return self.out(hn).squeeze()
+        return F.sigmoid(self.out(hn).squeeze())
 
 
 @click.group()
@@ -196,7 +199,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-    loss_func = nn.L1Loss()
+    loss_func = nn.BCELoss()
 
     if CUDA:
         model = model.cuda()
@@ -214,7 +217,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             batch = train.random_batch(batch_size)
 
-            x, y, _ = batch.xy_tensors()
+            x, y, = batch.xy_tensors()
 
             y_pred = model(x)
 
