@@ -138,7 +138,7 @@ class SentenceEncoder(nn.Module):
         """
         x, size_sort = batch.packed_sentence_tensor()
 
-        reorder = torch.LongTensor(np.argsort(size_sort))
+        reorder = torch.LongTensor(np.argsort(size_sort)).type(itype)
 
         y = self(x)[reorder]
 
