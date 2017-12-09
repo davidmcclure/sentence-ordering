@@ -277,7 +277,7 @@ def predict(model_path, test_path, test_skim, map_source, map_target):
 
     correct = 0
     kts = []
-    for ab in tqdm(test.abstracts[:20]):
+    for ab in tqdm(test.abstracts):
 
         ab.shuffle()
 
