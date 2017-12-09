@@ -12,6 +12,7 @@ import ujson
 from tqdm import tqdm
 from itertools import islice
 from glob import glob
+from boltons.iterutils import pairwise
 from scipy import stats
 
 from torch import nn
@@ -119,6 +120,63 @@ class Corpus:
         """Query random batch.
         """
         return Batch(random.sample(self.abstracts, size))
+
+
+class SentenceEncoder(nn.Module):
+
+    def __init__(self, lstm_dim):
+        super().__init__()
+        self.lstm = nn.LSTM(300, lstm_dim, batch_first=True,
+            bidirectional=True)
+
+    def forward(self, x):
+        _, (hn, cn) = self.lstm(x)
+        return hn[-1].squeeze()
+
+    def encode_batch(self, batch):
+        """Encode sentences in a batch, then regroup by abstract.
+        """
+        x, size_sort = batch.packed_sentence_tensor()
+
+        reorder = torch.LongTensor(np.argsort(size_sort))
+
+        y = self(x)[reorder]
+
+        start = 0
+        for ab in batch.abstracts:
+            end = start + len(ab.sentences)
+            yield y[start:end]
+            start = end
+
+    def batch_xy(self, batch):
+        """Encode sentences, generate positive and negative pairs.
+        """
+        x = []
+        y = []
+        for ab in self.encode_batch(batch):
+            for i in range(0, len(ab)-2):
+
+                s1, s2 = ab[i], ab[i+1]
+
+                # Pick random sentence that isn't next.
+                s3r = list(range(len(ab)))
+                s3r.remove(i)
+                s3r.remove(i+1)
+
+                s3 = ab[random.choice(s3r)]
+
+                # Next.
+                x.append(torch.cat([s1, s2]))
+                y.append(1)
+
+                # Not next.
+                x.append(torch.cat([s1, s3]))
+                y.append(0)
+
+        x = torch.stack(x)
+        y = Variable(torch.FloatTensor(y)).type(ftype)
+
+        return x, y
 
 
 @click.group()
