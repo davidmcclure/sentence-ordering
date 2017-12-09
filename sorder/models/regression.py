@@ -91,12 +91,15 @@ class Abstract:
             for i, s in enumerate(json['sentences'])
         ])
 
-    def shuffled_context(self):
+    def shuffle(self):
         """Shuffle sentences, return words.
         """
-        sents = sorted(self.sentences, key=lambda x: np.random.rand())
+        random.shuffle(self.sentences)
 
-        return [t for s in sents for t in s.tokens]
+    def tokens(self):
+        """Get list of all tokens.
+        """
+        return [t for s in self.sentences for t in s.tokens]
 
     def xy(self):
         """Generate x,y pairs.
@@ -114,6 +117,22 @@ class Abstract:
         # Not first.
         x, size = random.choice(sents[1:]).tensor(context)
         if size: yield x, size, 0
+
+    def predict_first(self, model):
+        """Pop first sentence.
+        """
+        context = self.tokens()
+
+        x, size = zip(*[s.tensor(context) for s in self.sentences])
+        x, len_sort = pack(torch.stack(x), size)
+
+        pred = model(x)
+        pred = np.array(pred.data.tolist())
+
+        reorder = np.argsort(len_sort)
+        pred = pred[reorder]
+
+        return self.sentences.pop(pred.argmax())
 
 
 @attr.s
@@ -256,7 +275,26 @@ def predict(model_path, test_path, test_skim, map_source, map_target):
 
     test = Corpus(test_path, test_skim)
 
-    print(model)
+    correct = 0
+    kts = []
+    for ab in tqdm(test.abstracts[:20]):
+
+        ab.shuffle()
+
+        sents = []
+        while ab.sentences:
+            sents.append(ab.predict_first(model))
+
+        pred = [s.order for s in sents]
+
+        kt, _ = stats.kendalltau(pred, range(len(pred)))
+        kts.append(kt)
+
+        if kt == 1:
+            correct += 1
+
+    print(sum(kts) / len(kts))
+    print(correct / len(kts))
 
 
 if __name__ == '__main__':
