@@ -6,6 +6,7 @@ import os
 import torch
 
 from torch.nn.utils.rnn import pack_padded_sequence
+from torch.autograd import Variable
 
 
 def checkpoint(root, key, model, epoch):
@@ -16,16 +17,19 @@ def checkpoint(root, key, model, epoch):
     torch.save(model, path)
 
 
-def pack(tensor, sizes, batch_first=True):
+def pack(tensor, sizes, ttype, batch_first=True):
     """Pack padded tensors, provide reorder indexes.
     """
     # Get indexes for sorted sizes.
     size_sort = np.argsort(sizes)[::-1].tolist()
 
-    # Sort the tensor / sizes.
-    tensor = tensor[torch.LongTensor(size_sort)].type(ftype)
+    # Sort the tensor by size.
+    tensor = tensor[torch.LongTensor(size_sort)].type(ttype)
+    tensor = Variable(tensor)
+
+    # Sort sizes descending.
     sizes = np.array(sizes)[size_sort].tolist()
 
-    packed = pack_padded_sequence(Variable(tensor), sizes, batch_first)
+    tensor = pack_padded_sequence(tensor, sizes, batch_first)
 
-    return packed, size_sort
+    return tensor, size_sort

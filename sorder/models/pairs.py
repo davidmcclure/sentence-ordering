@@ -20,8 +20,8 @@ from torch.autograd import Variable
 from torch.nn import functional as F
 
 from sorder.cuda import CUDA, ftype, itype
-from sorder.utils import checkpoint
 from sorder.vectors import LazyVectors
+from sorder.utils import checkpoint, pack
 
 
 vectors = LazyVectors.read()
@@ -85,6 +85,25 @@ class Batch:
 
     abstracts = attr.ib()
 
+    def sentence_tensor_iter(self):
+        """Generate (tensor, size) pairs for each sentence.
+        """
+        for ab in self.abstracts:
+            for sent in ab.sentences:
+
+                tensor, size = sent.tensor()
+
+                # Discard all-OOV sentences.
+                if size:
+                    yield tensor, size
+
+    def packed_sentence_tensor(self):
+        """Stack sentence tensors for all abstracts.
+        """
+        tensors, sizes = zip(*self.sentence_tensor_iter())
+
+        return pack(torch.stack(tensors), sizes, ftype)
+
 
 class Corpus:
 
@@ -99,6 +118,8 @@ class Corpus:
         self.abstracts = list(tqdm(reader, total=skim))
 
     def random_batch(self, size):
+        """Query random batch.
+        """
         return Batch(random.sample(self.abstracts, size))
 
 
