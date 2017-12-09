@@ -179,6 +179,16 @@ class SentenceEncoder(nn.Module):
         return x, y
 
 
+class Regressor(nn.Module):
+
+    def __init__(self, input_dim):
+        super().__init__()
+        self.out = nn.Linear(input_dim, 1)
+
+    def forward(self, x):
+        return F.sigmoid(self.out(x)).squeeze()
+
+
 @click.group()
 def cli():
     pass
@@ -186,27 +196,53 @@ def cli():
 
 @cli.command()
 @click.argument('train_path', type=click.Path())
+@click.argument('model_path', type=click.Path())
 @click.option('--train_skim', type=int, default=10000)
 @click.option('--epochs', type=int, default=1000)
 @click.option('--epoch_size', type=int, default=100)
 @click.option('--batch_size', type=int, default=10)
-def train(train_path, train_skim, epochs, epoch_size, batch_size):
+@click.option('--lstm_dim', type=int, default=500)
+def train(train_path, model_path, train_skim, epochs,
+    epoch_size, batch_size, lstm_dim):
     """Train model.
     """
     train = Corpus(train_path, train_skim)
+
+    m1 = SentenceEncoder(lstm_dim)
+    m2 = Regressor(lstm_dim*2)
+
+    params = list(m1.parameters()) + list(m2.parameters())
+    optimizer = torch.optim.Adam(params, lr=1e-3)
+
+    loss_func = nn.BCELoss()
+
+    if CUDA:
+        m1 = m1.cuda()
+        m2 = m2.cuda()
 
     for epoch in range(epochs):
 
         print(f'\nEpoch {epoch}')
 
+        epoch_loss = 0
         for _ in tqdm(range(epoch_size)):
 
-            batch = train.random_batch(batch_size)
-            print(batch)
+            optimizer.zero_grad()
 
-            # encode sentences in batch
-            # generate pos/neg xy pairs
-            # predict 0/1
+            batch = train.random_batch(batch_size)
+
+            x, y = m1.batch_xy(batch)
+
+            y_pred = m2(x)
+
+            loss = loss_func(y_pred, y)
+            loss.backward()
+
+            optimizer.step()
+
+            epoch_loss += loss.data[0]
+
+        print(epoch_loss / epoch_size)
 
 
 if __name__ == '__main__':
