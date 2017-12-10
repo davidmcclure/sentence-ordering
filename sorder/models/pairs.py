@@ -12,7 +12,7 @@ import ujson
 from tqdm import tqdm
 from itertools import islice
 from glob import glob
-from boltons.iterutils import pairwise
+from boltons.iterutils import pairwise, chunked_iter
 from scipy import stats
 
 from torch import nn
@@ -124,6 +124,12 @@ class Corpus:
         """Query random batch.
         """
         return Batch(random.sample(self.abstracts, size))
+
+    def batches(self, size):
+        """Iterate all batches.
+        """
+        for abstracts in chunked_iter(self.abstracts, size):
+            yield Batch(abstracts)
 
 
 class SentenceEncoder(nn.Module):
