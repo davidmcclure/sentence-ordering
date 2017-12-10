@@ -224,21 +224,12 @@ class BeamSearch:
 
         self.beam = [((i,), 0) for i in range(len(self.sents))]
 
-    def transition_score(self, i1, i2):
-        """Score a sentence transition.
-        """
-        x = torch.cat([
-            self.sents.mean(0),
-            self.sents[i1],
-            self.sents[i2],
-        ])
-
-        return self.model(x).data[0]
-
     def step(self):
         """Expand, score, prune.
         """
         new_beam = []
+
+        # Get new path candidates.
         for path, score in self.beam:
             for i in range(len(self.sents)):
                 if i not in path:
@@ -246,6 +237,7 @@ class BeamSearch:
 
         ctx = self.sents.mean(0)
 
+        # Get input tensors from final two sents in each path.
         x = torch.stack([
             torch.cat([ctx, self.sents[p[-2]], self.sents[p[-1]]])
             for p, _ in new_beam
@@ -253,13 +245,16 @@ class BeamSearch:
 
         y = self.model(x)
 
+        # Update scores.
         new_beam = [
             (path, score + new_score.data[0])
             for (path, score), new_score in zip(new_beam, y)
         ]
 
+        # Sort by score.
         new_beam = sorted(new_beam, key=lambda x: x[1], reverse=True)
 
+        # Keep N highest scoring paths.
         self.beam = new_beam[:self.beam_size]
 
     def search(self):
