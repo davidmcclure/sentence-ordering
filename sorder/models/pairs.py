@@ -255,6 +255,9 @@ def train(train_path, model_path, train_skim, lr, epochs,
             epoch_correct += (y_pred.round() == y).sum().data[0]
             epoch_total += len(y)
 
+        checkpoint(model_path, 'm1', m1, epoch)
+        checkpoint(model_path, 'm2', m2, epoch)
+
         print(epoch_loss / epoch_size)
         print(epoch_correct / epoch_total)
 
