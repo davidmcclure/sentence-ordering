@@ -196,23 +196,8 @@ class Regressor(nn.Module):
         return y.squeeze()
 
 
-@click.group()
-def cli():
-    pass
-
-
-@cli.command()
-@click.argument('train_path', type=click.Path())
-@click.argument('model_path', type=click.Path())
-@click.option('--train_skim', type=int, default=10000)
-@click.option('--lr', type=float, default=1e-3)
-@click.option('--epochs', type=int, default=1000)
-@click.option('--epoch_size', type=int, default=100)
-@click.option('--batch_size', type=int, default=10)
-@click.option('--lstm_dim', type=int, default=500)
-@click.option('--lin_dim', type=int, default=300)
-def train(train_path, model_path, train_skim, lr, epochs,
-    epoch_size, batch_size, lstm_dim, lin_dim):
+def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
+    batch_size, lstm_dim, lin_dim):
     """Train model.
     """
     train = Corpus(train_path, train_skim)
@@ -260,7 +245,3 @@ def train(train_path, model_path, train_skim, lr, epochs,
 
         print(epoch_loss / epoch_size)
         print(epoch_correct / epoch_total)
-
-
-if __name__ == '__main__':
-    cli()
