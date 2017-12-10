@@ -131,7 +131,7 @@ class SentenceEncoder(nn.Module):
 
     def forward(self, x):
         _, (hn, cn) = self.lstm(x)
-        return hn[-1].squeeze()
+        return cn[-1].squeeze()
 
     def encode_batch(self, batch):
         """Encode sentences in a batch, then regroup by abstract.
@@ -245,3 +245,44 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
         print(epoch_loss / epoch_size)
         print(epoch_correct / epoch_total)
+
+
+class BeamSearch:
+
+    def __init__(self, sents, beam_size=1000):
+        """Initialize containers.
+
+        Args:
+            sents (FloatTensor): Tensor of encoded sentences.
+        """
+        self.sents = sents
+        self.beam_size = beam_size
+
+        self.beam = [((i,), 0) for i in range(len(self.sents))]
+
+    def transition_score(self, i1, i2):
+        """Score a sentence transition.
+        """
+        # TODO
+        return random.random()
+
+    def step(self):
+        """Expand, score, prune.
+        """
+        new_beam = []
+
+        for path, score in self.beam:
+            for i in range(len(self.sents)):
+
+                if i in path:
+                    continue
+
+                new_score = score + self.transition_score(path[-1], i)
+
+                new_path = (*path, i)
+
+                new_beam.append((new_path, new_score))
+
+        new_beam = sorted(new_beam, key=lambda x: x[1], reverse=True)
+
+        self.beam = new_beam[:self.beam_size]
