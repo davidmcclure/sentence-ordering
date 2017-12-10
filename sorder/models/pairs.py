@@ -211,13 +211,15 @@ class Regressor(nn.Module):
 
 class BeamSearch:
 
-    def __init__(self, sents, beam_size=1000):
+    def __init__(self, sents, model, beam_size=1000):
         """Initialize containers.
 
         Args:
             sents (FloatTensor): Tensor of encoded sentences.
         """
         self.sents = sents
+        self.model = model
+
         self.beam_size = beam_size
 
         self.beam = [((i,), 0) for i in range(len(self.sents))]
@@ -225,8 +227,13 @@ class BeamSearch:
     def transition_score(self, i1, i2):
         """Score a sentence transition.
         """
-        # TODO
-        return random.random()
+        x = torch.cat([
+            self.sents.mean(0),
+            self.sents[i1],
+            self.sents[i2],
+        ])
+
+        return self.model(x).data[0]
 
     def step(self):
         """Expand, score, prune.
@@ -309,7 +316,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
         print(epoch_correct / epoch_total)
 
 
-def predict(test_path, m1_path, m2_path, test_skim, map_location, map_target):
+def predict(test_path, m1_path, m2_path, test_skim, map_source, map_target):
     """Predict order.
     """
     test = Corpus(test_path, test_skim)
@@ -317,13 +324,24 @@ def predict(test_path, m1_path, m2_path, test_skim, map_location, map_target):
     m1 = torch.load(m1_path, map_location={map_source: map_target})
     m2 = torch.load(m2_path, map_location={map_source: map_target})
 
-    for batch in test.batches():
+    kts = []
+    correct = 0
+    for batch in test.batches(10):
 
         batch.shuffle()
 
-        for ab, sents in zip(batch.abstracts, m1.encode_batch(batch)):
+        encoded = m1.encode_batch(batch)
+
+        for ab, sents in tqdm(zip(batch.abstracts, encoded)):
 
             gold = np.argsort([s.order for s in ab.sentences])
-            pred = beam_search(sents, m2)
+            pred = BeamSearch(sents, m2).search()
 
-            print(gold, pred)
+            kt, _ = stats.kendalltau(gold, pred)
+            kts.append(kt)
+
+            if kt == 1:
+                correct += 1
+
+    print(sum(kts) / len(kts))
+    print(correct / len(kts))
