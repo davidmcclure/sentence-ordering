@@ -84,9 +84,6 @@ class Abstract:
             for i, s in enumerate(json['sentences'])
         ])
 
-    def shuffle(self):
-        random.shuffle(self.sentences)
-
 
 @attr.s
 class Batch:
@@ -106,6 +103,12 @@ class Batch:
         tensors, sizes = zip(*self.sentence_tensor_iter())
 
         return pack(torch.stack(tensors), sizes, ftype)
+
+    def shuffle(self):
+        """Shuffle sentences in all abstracts.
+        """
+        for ab in self.abstracts:
+            random.shuffle(ab.sentences)
 
 
 class Corpus:
@@ -206,6 +209,55 @@ class Regressor(nn.Module):
         return y.squeeze()
 
 
+class BeamSearch:
+
+    def __init__(self, sents, beam_size=1000):
+        """Initialize containers.
+
+        Args:
+            sents (FloatTensor): Tensor of encoded sentences.
+        """
+        self.sents = sents
+        self.beam_size = beam_size
+
+        self.beam = [((i,), 0) for i in range(len(self.sents))]
+
+    def transition_score(self, i1, i2):
+        """Score a sentence transition.
+        """
+        # TODO
+        return random.random()
+
+    def step(self):
+        """Expand, score, prune.
+        """
+        new_beam = []
+
+        for path, score in self.beam:
+            for i in range(len(self.sents)):
+
+                if i in path:
+                    continue
+
+                new_score = score + self.transition_score(path[-1], i)
+
+                new_path = (*path, i)
+
+                new_beam.append((new_path, new_score))
+
+        new_beam = sorted(new_beam, key=lambda x: x[1], reverse=True)
+
+        self.beam = new_beam[:self.beam_size]
+
+    def search(self):
+        """Probe, return top sequence.
+        """
+        for _ in range(len(self.sents)-1):
+            self.step()
+
+        return self.beam[0][0]
+
+
 def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     batch_size, lstm_dim, lin_dim):
     """Train model.
@@ -257,50 +309,21 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
         print(epoch_correct / epoch_total)
 
 
-class BeamSearch:
+def predict(test_path, m1_path, m2_path, test_skim, map_location, map_target):
+    """Predict order.
+    """
+    test = Corpus(test_path, test_skim)
 
-    def __init__(self, sents, beam_size=1000):
-        """Initialize containers.
+    m1 = torch.load(m1_path, map_location={map_source: map_target})
+    m2 = torch.load(m2_path, map_location={map_source: map_target})
 
-        Args:
-            sents (FloatTensor): Tensor of encoded sentences.
-        """
-        self.sents = sents
-        self.beam_size = beam_size
+    for batch in test.batches():
 
-        self.beam = [((i,), 0) for i in range(len(self.sents))]
+        batch.shuffle()
 
-    def transition_score(self, i1, i2):
-        """Score a sentence transition.
-        """
-        # TODO
-        return random.random()
+        for ab, sents in zip(batch.abstracts, m1.encode_batch(batch)):
 
-    def step(self):
-        """Expand, score, prune.
-        """
-        new_beam = []
+            gold = np.argsort([s.order for s in ab.sentences])
+            pred = beam_search(sents, m2)
 
-        for path, score in self.beam:
-            for i in range(len(self.sents)):
-
-                if i in path:
-                    continue
-
-                new_score = score + self.transition_score(path[-1], i)
-
-                new_path = (*path, i)
-
-                new_beam.append((new_path, new_score))
-
-        new_beam = sorted(new_beam, key=lambda x: x[1], reverse=True)
-
-        self.beam = new_beam[:self.beam_size]
-
-    def search(self):
-        """Probe, return top sequence.
-        """
-        for _ in range(len(self.sents)-1):
-            self.step()
-
-        return self.beam[0][0]
+            print(gold, pred)
