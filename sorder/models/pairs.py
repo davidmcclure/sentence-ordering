@@ -16,7 +16,7 @@ from boltons.iterutils import pairwise
 from scipy import stats
 
 from torch import nn
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from torch.nn.utils.rnn import pack_padded_sequence
 from torch.autograd import Variable
 from torch.nn import functional as F
 
@@ -46,6 +46,7 @@ def read_abstracts(path, maxlen):
 @attr.s
 class Sentence:
 
+    order = attr.ib()
     tokens = attr.ib()
 
     def tensor(self, dim=300, pad=50):
@@ -79,9 +80,12 @@ class Abstract:
         json = ujson.loads(line.strip())
 
         return cls([
-            Sentence(s['token'])
-            for s in json['sentences']
+            Sentence(i, s['token'])
+            for i, s in enumerate(json['sentences'])
         ])
+
+    def shuffle(self):
+        random.shuffle(self.sentences)
 
 
 @attr.s
