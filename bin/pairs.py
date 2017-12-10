@@ -18,8 +18,8 @@ def cli():
 @click.option('--epochs', type=int, default=1000)
 @click.option('--epoch_size', type=int, default=100)
 @click.option('--batch_size', type=int, default=10)
-@click.option('--lstm_dim', type=int, default=500)
-@click.option('--lin_dim', type=int, default=300)
+@click.option('--lstm_dim', type=int, default=1000)
+@click.option('--lin_dim', type=int, default=500)
 def train(*args, **kwargs):
     pairs.train(*args, **kwargs)
 
