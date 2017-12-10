@@ -243,6 +243,8 @@ class BeamSearch:
             for p, _ in new_beam
         ])
 
+        x = x.type(ftype)
+
         y = self.model(x)
 
         # Update scores.
