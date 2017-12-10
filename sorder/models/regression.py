@@ -19,8 +19,8 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from torch.autograd import Variable
 from torch.nn import functional as F
 
+from sorder.utils import checkpoint, pack
 from sorder.cuda import CUDA, ftype, itype
-from sorder.utils import checkpoint
 from sorder.vectors import LazyVectors
 
 
@@ -33,24 +33,13 @@ def read_abstracts(path, maxlen):
     for path in glob(os.path.join(path, '*.json')):
         with open(path) as fh:
             for line in fh:
-                json = ujson.loads(line.strip())
-                if len(json['sentences']) < maxlen:
-                    yield Abstract.from_json(json)
 
+                # Parse JSON.
+                abstract = Abstract.from_line(line)
 
-def pack(tensor, sizes, batch_first=True):
-    """Pack padded tensors, provide reorder indexes.
-    """
-    # Get indexes for sorted sizes.
-    size_sort = np.argsort(sizes)[::-1].tolist()
-
-    # Sort the tensor / sizes.
-    tensor = tensor[torch.LongTensor(size_sort)].type(ftype)
-    sizes = np.array(sizes)[size_sort].tolist()
-
-    packed = pack_padded_sequence(Variable(tensor), sizes, batch_first)
-
-    return packed, size_sort
+                # Filter by length.
+                if len(abstract.sentences) < maxlen:
+                    yield abstract
 
 
 @attr.s
@@ -58,12 +47,16 @@ class Sentence:
 
     tokens = attr.ib()
 
-    def tensor(self, dim=300, pad=50):
+    def tensor(self, context, dim=300, pad=500):
         """Stack word vectors, padding zeros on left.
         """
-        # Get word tensors and length.
-        x = [vectors[t] for t in self.tokens if t in vectors]
-        size = min(len(x), pad)
+        tokens = self.tokens + context
+
+        # Map words to embeddings.
+        x = [
+            vectors[t] if t in vectors else np.zeros(dim)
+            for t in tokens
+        ]
 
         # Pad zeros.
         x += [np.zeros(dim)] * pad
@@ -71,7 +64,8 @@ class Sentence:
         x = np.array(x)
         x = torch.from_numpy(x)
         x = x.float()
-        return x, size
+
+        return x, len(tokens)
 
 
 @attr.s
@@ -80,22 +74,33 @@ class Abstract:
     sentences = attr.ib()
 
     @classmethod
-    def from_json(cls, json):
-        """Pull out raw token series.
+    def from_line(cls, line):
+        """Parse JSON, take tokens.
         """
-        return cls([Sentence(s['token']) for s in json['sentences']])
+        json = ujson.loads(line.strip())
+
+        return cls([
+            Sentence(s['token'])
+            for s in json['sentences']
+        ])
+
+    def shuffled_context(self):
+        """Get tokens in shuffled sentences.
+        """
+        sents = sorted(self.sentences, key=lambda x: random.random())
+        return [t for s in sents for t in s.tokens]
 
     def xy(self):
-        """Generate x,y pairs.
+        """Generate x/y pairs.
         """
-        for i, s in enumerate(self.sentences):
+        for i, sent in enumerate(self.sentences):
 
-            x, size = s.tensor()
+            context = self.shuffled_context()
+            x, size = sent.tensor(context)
 
-            # Skip sentences with no mapped tokens.
-            if (size):
-                y = i / (len(self.sentences)-1)
-                yield x, size, y
+            y = i / (len(self.sentences)-1)
+
+            yield x, size, y
 
 
 @attr.s
@@ -103,24 +108,19 @@ class Batch:
 
     abstracts = attr.ib()
 
-    def tensor(self):
-        """Stack abstract tensors.
-        """
-        tensors = [a.tensor() for a in self.abstracts]
-        return torch.cat(tensors)
-
     def xy(self):
-        """Generate x, y pairs.
+        """Generate (tensor, size) pairs for each sentence.
         """
         for ab in self.abstracts:
             yield from ab.xy()
 
     def xy_tensors(self):
-        """Generate (packed) x + y tensors
+        """Pack sentence tensors.
         """
         x, size, y = zip(*self.xy())
+        print(size)
 
-        x, len_sort = pack(torch.stack(x), size)
+        x, len_sort = pack(torch.stack(x), size, ftype)
 
         y = np.array(y)[len_sort]
         y = Variable(torch.FloatTensor(y)).type(ftype)
