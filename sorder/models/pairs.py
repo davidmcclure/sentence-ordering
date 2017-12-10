@@ -239,18 +239,24 @@ class BeamSearch:
         """Expand, score, prune.
         """
         new_beam = []
-
         for path, score in self.beam:
             for i in range(len(self.sents)):
+                if i not in path:
+                    new_beam.append(((*path, i), score))
 
-                if i in path:
-                    continue
+        ctx = self.sents.mean(0)
 
-                new_score = score + self.transition_score(path[-1], i)
+        x = torch.stack([
+            torch.cat([ctx, self.sents[p[-2]], self.sents[p[-1]]])
+            for p, _ in new_beam
+        ])
 
-                new_path = (*path, i)
+        y = self.model(x)
 
-                new_beam.append((new_path, new_score))
+        new_beam = [
+            (path, score + new_score.data[0])
+            for (path, score), new_score in zip(new_beam, y)
+        ]
 
         new_beam = sorted(new_beam, key=lambda x: x[1], reverse=True)
 
@@ -326,13 +332,13 @@ def predict(test_path, m1_path, m2_path, test_skim, map_source, map_target):
 
     kts = []
     correct = 0
-    for batch in test.batches(10):
+    for batch in tqdm(test.batches(10)):
 
         batch.shuffle()
 
         encoded = m1.encode_batch(batch)
 
-        for ab, sents in tqdm(zip(batch.abstracts, encoded)):
+        for ab, sents in zip(batch.abstracts, encoded):
 
             gold = np.argsort([s.order for s in ab.sentences])
             pred = BeamSearch(sents, m2).search()
