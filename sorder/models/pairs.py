@@ -171,21 +171,12 @@ class SentenceEncoder(nn.Module):
 
                 s1, s2 = ab[i], ab[i+1]
 
-                # Pick random sentence that isn't next.
-                s3r = list(range(len(ab)))
-                s3r.remove(i)
-                s3r.remove(i+1)
-
-                s3 = ab[random.choice(s3r)]
-
-                context = ab.mean(0)
-
                 # Next.
-                x.append(torch.cat([context, s1, s2]))
+                x.append(torch.cat([s1, s2]))
                 y.append(1)
 
                 # Not next.
-                x.append(torch.cat([context, s1, s3]))
+                x.append(torch.cat([s2, s1]))
                 y.append(0)
 
         x = torch.stack(x)
@@ -207,6 +198,57 @@ class Regressor(nn.Module):
         y = F.relu(self.lin2(y))
         y = F.sigmoid(self.out(y))
         return y.squeeze()
+
+
+def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
+    batch_size, lstm_dim, lin_dim):
+    """Train model.
+    """
+    train = Corpus(train_path, train_skim)
+
+    m1 = SentenceEncoder(lstm_dim)
+    m2 = Regressor(lstm_dim*2, lin_dim)
+
+    params = list(m1.parameters()) + list(m2.parameters())
+    optimizer = torch.optim.Adam(params, lr=lr)
+
+    loss_func = nn.BCELoss()
+
+    if CUDA:
+        m1 = m1.cuda()
+        m2 = m2.cuda()
+
+    for epoch in range(epochs):
+
+        print(f'\nEpoch {epoch}')
+
+        epoch_loss = 0
+        epoch_correct = 0
+        epoch_total = 0
+        for _ in tqdm(range(epoch_size)):
+
+            optimizer.zero_grad()
+
+            batch = train.random_batch(batch_size)
+
+            x, y = m1.batch_xy(batch)
+
+            y_pred = m2(x)
+
+            loss = loss_func(y_pred, y)
+            loss.backward()
+
+            optimizer.step()
+
+            epoch_loss += loss.data[0]
+            epoch_correct += (y_pred.round() == y).sum().data[0]
+            epoch_total += len(y)
+
+        checkpoint(model_path, 'm1', m1, epoch)
+        checkpoint(model_path, 'm2', m2, epoch)
+
+        print(epoch_loss / epoch_size)
+        print(epoch_correct / epoch_total)
 
 
 class BeamSearch:
@@ -266,57 +308,6 @@ class BeamSearch:
             self.step()
 
         return self.beam[0][0]
-
-
-def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
-    batch_size, lstm_dim, lin_dim):
-    """Train model.
-    """
-    train = Corpus(train_path, train_skim)
-
-    m1 = SentenceEncoder(lstm_dim)
-    m2 = Regressor(lstm_dim*3, lin_dim)
-
-    params = list(m1.parameters()) + list(m2.parameters())
-    optimizer = torch.optim.Adam(params, lr=lr)
-
-    loss_func = nn.BCELoss()
-
-    if CUDA:
-        m1 = m1.cuda()
-        m2 = m2.cuda()
-
-    for epoch in range(epochs):
-
-        print(f'\nEpoch {epoch}')
-
-        epoch_loss = 0
-        epoch_correct = 0
-        epoch_total = 0
-        for _ in tqdm(range(epoch_size)):
-
-            optimizer.zero_grad()
-
-            batch = train.random_batch(batch_size)
-
-            x, y = m1.batch_xy(batch)
-
-            y_pred = m2(x)
-
-            loss = loss_func(y_pred, y)
-            loss.backward()
-
-            optimizer.step()
-
-            epoch_loss += loss.data[0]
-            epoch_correct += (y_pred.round() == y).sum().data[0]
-            epoch_total += len(y)
-
-        checkpoint(model_path, 'm1', m1, epoch)
-        checkpoint(model_path, 'm2', m2, epoch)
-
-        print(epoch_loss / epoch_size)
-        print(epoch_correct / epoch_total)
 
 
 def predict(test_path, m1_path, m2_path, test_skim, map_source, map_target):

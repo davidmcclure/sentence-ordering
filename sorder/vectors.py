@@ -21,7 +21,6 @@ class LazyVectors:
 
     @cached_property
     def model(self):
-        print('Loading vectors...')
         return KeyedVectors.load(self.path)
 
     def __getitem__(self, key):
