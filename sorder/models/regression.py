@@ -118,7 +118,6 @@ class Batch:
         """Pack sentence tensors.
         """
         x, size, y = zip(*self.xy())
-        print(size)
 
         x, len_sort = pack(torch.stack(x), size, ftype)
 
