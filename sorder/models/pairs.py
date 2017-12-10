@@ -286,3 +286,11 @@ class BeamSearch:
         new_beam = sorted(new_beam, key=lambda x: x[1], reverse=True)
 
         self.beam = new_beam[:self.beam_size]
+
+    def search(self):
+        """Probe, return top sequence.
+        """
+        for _ in range(len(self.sents)-1):
+            self.step()
+
+        return self.beam[0][0]
