@@ -33,3 +33,13 @@ def pack(tensor, sizes, ttype, batch_first=True):
     tensor = pack_padded_sequence(tensor, sizes, batch_first)
 
     return tensor, size_sort
+
+
+def pad(tensor, length):
+    """Zero-pad a tensor to given length on the right.
+    """
+    pad_size = length - tensor.size(0)
+
+    padding = tensor.new(pad_size, *tensor.size()[1:]).zero_()
+
+    return torch.cat([tensor, padding])
