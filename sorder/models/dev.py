@@ -46,6 +46,7 @@ def read_abstracts(path, maxlen):
 @attr.s
 class Sentence:
 
+    position = attr.ib()
     tokens = attr.ib()
 
     def tensor(self, dim=300, pad=50):
@@ -79,8 +80,8 @@ class Abstract:
         json = ujson.loads(line.strip())
 
         return cls([
-            Sentence(s['token'])
-            for s in json['sentences']
+            Sentence(i, s['token'])
+            for i, s in enumerate(json['sentences'])
         ])
 
 
@@ -102,6 +103,12 @@ class Batch:
         tensors, sizes = zip(*self.sentence_tensor_iter())
 
         return pack(torch.stack(tensors), sizes, ftype)
+
+    def shuffle(self):
+        """Shuffle sentences in all abstracts.
+        """
+        for ab in self.abstracts:
+            random.shuffle(ab.sentences)
 
 
 class Corpus:
@@ -285,3 +292,34 @@ class PickFirst:
             self.swap(i, len(self.sents)+1)
 
         return self.order.tolist()
+
+
+def predict(test_path, m1_path, m2_path, test_skim, map_source, map_target):
+    """Predict order.
+    """
+    test = Corpus(test_path, test_skim)
+
+    m1 = torch.load(m1_path, map_location={map_source: map_target})
+    m2 = torch.load(m2_path, map_location={map_source: map_target})
+
+    kts = []
+    correct = 0
+    for batch in tqdm(test.batches(100)):
+
+        batch.shuffle()
+
+        encoded = m1.encode_batch(batch)
+
+        for ab, sents in zip(batch.abstracts, encoded):
+
+            gold = np.argsort([s.position for s in ab.sentences])
+            pred = PickFirst(sents, m2).predict()
+
+            kt, _ = stats.kendalltau(gold, pred)
+            kts.append(kt)
+
+            if kt == 1:
+                correct += 1
+
+    print(sum(kts) / len(kts))
+    print(correct / len(kts))
