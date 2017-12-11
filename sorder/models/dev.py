@@ -249,3 +249,39 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
         print(epoch_loss / epoch_size)
         print(epoch_correct / epoch_total)
+
+
+class PickFirst:
+
+    def __init__(self, sents, model):
+
+        self.sents = sents
+        self.model = model
+
+        self.order = torch.LongTensor(range(len(sents)))
+
+    def swap(self, i1, i2):
+        """Given a context, predict first sentence, swap into place.
+        """
+        context = self.sents[self.order][i1:i2]
+
+        context_mean = context.mean(0)
+
+        x = torch.stack([
+            torch.cat([context_mean, sent])
+            for sent in context
+        ])
+
+        pred = self.model(x)
+        midx = i1 + np.argmax(pred.data.tolist())
+
+        # Swap max into first slot.
+        self.order[i1], self.order[midx] = self.order[midx], self.order[i1]
+
+    def predict(self):
+        """Pick first for all right-side contexts.
+        """
+        for i in range(len(self.sents)):
+            self.swap(i, len(self.sents)+1)
+
+        return self.order.tolist()
