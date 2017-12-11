@@ -167,24 +167,18 @@ class SentenceEncoder(nn.Module):
         x = []
         y = []
         for ab in self.encode_batch(batch):
+            for i in range(len(ab)-2):
 
-            if len(ab) < 2:
-                continue
+                window = ab[i:]
+                context = window.mean(0)
 
-            # Window of random size.
-            size = random.randint(2, len(ab))
-            i = random.randint(0, len(ab)-size)
-            ab = ab[i:i+size]
+                # First.
+                x.append(torch.cat([context, window[0]]))
+                y.append(1)
 
-            context = ab.mean(0)
-
-            # First.
-            x.append(torch.cat([context, ab[0]]))
-            y.append(1)
-
-            # Not first.
-            x.append(torch.cat([context, random.choice(ab[1:])]))
-            y.append(0)
+                # Not first.
+                x.append(torch.cat([context, random.choice(window[1:])]))
+                y.append(0)
 
         x = torch.stack(x)
         y = Variable(torch.FloatTensor(y)).type(ftype)
