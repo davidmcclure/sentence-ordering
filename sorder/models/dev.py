@@ -12,11 +12,11 @@ import ujson
 from tqdm import tqdm
 from itertools import islice
 from glob import glob
-from boltons.iterutils import pairwise
+from boltons.iterutils import pairwise, chunked_iter
 from scipy import stats
 
 from torch import nn
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+from torch.nn.utils.rnn import pack_padded_sequence
 from torch.autograd import Variable
 from torch.nn import functional as F
 
@@ -48,7 +48,7 @@ class Sentence:
 
     tokens = attr.ib()
 
-    def tensor(self, dim=300, pad=500):
+    def tensor(self, dim=300, pad=50):
         """Stack word vectors, padding zeros on left.
         """
         # Map words to embeddings.
@@ -83,47 +83,23 @@ class Abstract:
             for s in json['sentences']
         ])
 
-    def context_tensor(self):
-        """Make a tensor with all words.
-        """
-        sents = sorted(self.sentences, key=lambda x: random.random())
-
-        tokens = [t for s in sents for t in s.tokens]
-
-        return Sentence(tokens).tensor()
-
-    def tensors_iter(self):
-        """Provide context tensor, then sentences.
-        """
-        yield self.context_tensor()
-
-        for sent in self.sentences:
-            yield sent.tensor()
-
-    def clip_random(self):
-        """Take the last N sentences, where N is random.
-        """
-        if len(self.sentences) > 2:
-            start = random.randint(0, len(self.sentences)-2)
-            self.sentences = self.sentences[start:]
-
 
 @attr.s
 class Batch:
 
     abstracts = attr.ib()
 
-    def tensors_iter(self):
-        """Provide tensors for all sentences.
+    def sentence_tensor_iter(self):
+        """Generate (tensor, size) pairs for each sentence.
         """
         for ab in self.abstracts:
-            ab.clip_random()
-            yield from ab.tensors_iter()
+            for sent in ab.sentences:
+                yield sent.tensor()
 
     def packed_sentence_tensor(self):
         """Stack sentence tensors for all abstracts.
         """
-        tensors, sizes = zip(*self.tensors_iter())
+        tensors, sizes = zip(*self.sentence_tensor_iter())
 
         return pack(torch.stack(tensors), sizes, ftype)
 
@@ -146,7 +122,7 @@ class Corpus:
         return Batch(random.sample(self.abstracts, size))
 
 
-class Encoder(nn.Module):
+class SentenceEncoder(nn.Module):
 
     def __init__(self, lstm_dim):
         super().__init__()
@@ -168,7 +144,7 @@ class Encoder(nn.Module):
 
         start = 0
         for ab in batch.abstracts:
-            end = start + len(ab.sentences) + 1
+            end = start + len(ab.sentences)
             yield y[start:end]
             start = end
 
@@ -179,20 +155,11 @@ class Encoder(nn.Module):
         y = []
         for ab in self.encode_batch(batch):
 
-            if len(ab) < 3:
-                continue
+            context = ab.mean(0)
 
-            context = ab[0]
-            s1 = ab[1]
-            sn = random.choice(ab[2:])
-
-            # First.
-            x.append(torch.cat([context, s1]))
-            y.append(1)
-
-            # Not first.
-            x.append(torch.cat([context, sn]))
-            y.append(0)
+            for i in range(len(ab)):
+                x.append(torch.cat([context, ab[i]]))
+                y.append(i / (len(ab)-1))
 
         x = torch.stack(x)
         y = Variable(torch.FloatTensor(y)).type(ftype)
@@ -211,38 +178,23 @@ class Regressor(nn.Module):
     def forward(self, x):
         y = F.relu(self.lin1(x))
         y = F.relu(self.lin2(y))
-        y = F.sigmoid(self.out(y))
+        y = self.out(y)
         return y.squeeze()
 
 
-@click.group()
-def cli():
-    pass
-
-
-@cli.command()
-@click.argument('train_path', type=click.Path())
-@click.argument('model_path', type=click.Path())
-@click.option('--train_skim', type=int, default=10000)
-@click.option('--lr', type=float, default=1e-3)
-@click.option('--epochs', type=int, default=1000)
-@click.option('--epoch_size', type=int, default=100)
-@click.option('--batch_size', type=int, default=10)
-@click.option('--lstm_dim', type=int, default=500)
-@click.option('--lin_dim', type=int, default=300)
-def train(train_path, model_path, train_skim, lr, epochs,
-    epoch_size, batch_size, lstm_dim, lin_dim):
+def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
+    batch_size, lstm_dim, lin_dim):
     """Train model.
     """
     train = Corpus(train_path, train_skim)
 
-    m1 = Encoder(lstm_dim)
+    m1 = SentenceEncoder(lstm_dim)
     m2 = Regressor(lstm_dim*2, lin_dim)
 
     params = list(m1.parameters()) + list(m2.parameters())
     optimizer = torch.optim.Adam(params, lr=lr)
 
-    loss_func = nn.BCELoss()
+    loss_func = nn.L1Loss()
 
     if CUDA:
         m1 = m1.cuda()
@@ -253,8 +205,6 @@ def train(train_path, model_path, train_skim, lr, epochs,
         print(f'\nEpoch {epoch}')
 
         epoch_loss = 0
-        epoch_correct = 0
-        epoch_total = 0
         for _ in tqdm(range(epoch_size)):
 
             optimizer.zero_grad()
@@ -271,12 +221,8 @@ def train(train_path, model_path, train_skim, lr, epochs,
             optimizer.step()
 
             epoch_loss += loss.data[0]
-            epoch_correct += (y_pred.round() == y).sum().data[0]
-            epoch_total += len(y)
+
+        checkpoint(model_path, 'm1', m1, epoch)
+        checkpoint(model_path, 'm2', m2, epoch)
 
         print(epoch_loss / epoch_size)
-        print(epoch_correct / epoch_total)
-
-
-if __name__ == '__main__':
-    cli()
