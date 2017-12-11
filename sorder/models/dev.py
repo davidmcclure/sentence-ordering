@@ -171,7 +171,8 @@ class SentenceEncoder(nn.Module):
 
                 window = ab[i:]
                 context = window.mean(0)
-                size = Variable(torch.FloatTensor([len(window)]))
+
+                size = Variable(torch.FloatTensor([len(window)])).type(ftype)
 
                 # First.
                 x.append(torch.cat([context, window[0], size]))
