@@ -121,6 +121,12 @@ class Corpus:
         """
         return Batch(random.sample(self.abstracts, size))
 
+    def batches(self, size):
+        """Iterate all batches.
+        """
+        for abstracts in chunked_iter(self.abstracts, size):
+            yield Batch(abstracts)
+
 
 class SentenceEncoder(nn.Module):
 
@@ -226,3 +232,37 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
         checkpoint(model_path, 'm2', m2, epoch)
 
         print(epoch_loss / epoch_size)
+
+
+def predict(test_path, m1_path, m2_path, test_skim, map_source, map_target):
+    """Predict order.
+    """
+    test = Corpus(test_path, test_skim)
+
+    m1 = torch.load(m1_path, map_location={map_source: map_target})
+    m2 = torch.load(m2_path, map_location={map_source: map_target})
+
+    kts = []
+    correct = 0
+    for batch in tqdm(test.batches(100)):
+
+        x, _ = m1.batch_xy(batch)
+
+        preds = m2(x)
+
+        start = 0
+        for ab in batch.abstracts:
+
+            end = start + len(ab.sentences)
+
+            pred = preds[start:end]
+            pred = np.argsort(pred.data.tolist())
+
+            kt, _ = stats.kendalltau(range(len(pred)), pred)
+            kts.append(kt)
+
+            if kt == 1:
+                correct += 1
+
+    print(sum(kts) / len(kts))
+    print(correct / len(kts))
