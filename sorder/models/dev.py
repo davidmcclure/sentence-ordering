@@ -161,17 +161,23 @@ class SentenceEncoder(nn.Module):
         y = []
         for ab in self.encode_batch(batch):
 
-            # Take out a random window.
-            if len(ab) > 1:
-                size = random.randint(2, len(ab))
-                i = random.randint(0, len(ab)-size)
-                ab = ab[i:i+size]
+            if len(ab) < 2:
+                continue
+
+            # Window of random size.
+            size = random.randint(2, len(ab))
+            i = random.randint(0, len(ab)-size)
+            ab = ab[i:i+size]
 
             context = ab.mean(0)
 
-            for i in range(len(ab)):
-                x.append(torch.cat([context, ab[i]]))
-                y.append(i / (len(ab)-1))
+            # First.
+            x.append(torch.cat([context, ab[0]]))
+            y.append(1)
+
+            # Not first.
+            x.append(torch.cat([context, random.choice(ab[1:])]))
+            y.append(0)
 
         x = torch.stack(x)
         y = Variable(torch.FloatTensor(y)).type(ftype)
@@ -190,7 +196,7 @@ class Regressor(nn.Module):
     def forward(self, x):
         y = F.relu(self.lin1(x))
         y = F.relu(self.lin2(y))
-        y = self.out(y)
+        y = F.sigmoid(self.out(y))
         return y.squeeze()
 
 
@@ -206,7 +212,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     params = list(m1.parameters()) + list(m2.parameters())
     optimizer = torch.optim.Adam(params, lr=lr)
 
-    loss_func = nn.L1Loss()
+    loss_func = nn.BCELoss()
 
     if CUDA:
         m1 = m1.cuda()
@@ -217,6 +223,8 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
         print(f'\nEpoch {epoch}')
 
         epoch_loss = 0
+        epoch_correct = 0
+        epoch_total = 0
         for _ in tqdm(range(epoch_size)):
 
             optimizer.zero_grad()
@@ -233,42 +241,11 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
             optimizer.step()
 
             epoch_loss += loss.data[0]
+            epoch_correct += (y_pred.round() == y).sum().data[0]
+            epoch_total += len(y)
 
         checkpoint(model_path, 'm1', m1, epoch)
         checkpoint(model_path, 'm2', m2, epoch)
 
         print(epoch_loss / epoch_size)
-
-
-def predict(test_path, m1_path, m2_path, test_skim, map_source, map_target):
-    """Predict order.
-    """
-    test = Corpus(test_path, test_skim)
-
-    m1 = torch.load(m1_path, map_location={map_source: map_target})
-    m2 = torch.load(m2_path, map_location={map_source: map_target})
-
-    kts = []
-    correct = 0
-    for batch in tqdm(test.batches(100)):
-
-        x, _ = m1.batch_xy(batch)
-
-        preds = m2(x)
-
-        start = 0
-        for ab in batch.abstracts:
-
-            end = start + len(ab.sentences)
-
-            pred = preds[start:end]
-            pred = np.argsort(pred.data.tolist())
-
-            kt, _ = stats.kendalltau(range(len(pred)), pred)
-            kts.append(kt)
-
-            if kt == 1:
-                correct += 1
-
-    print(sum(kts) / len(kts))
-    print(correct / len(kts))
+        print(epoch_correct / epoch_total)
