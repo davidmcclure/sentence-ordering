@@ -161,6 +161,12 @@ class SentenceEncoder(nn.Module):
         y = []
         for ab in self.encode_batch(batch):
 
+            # Take out a random window.
+            if len(ab) > 1:
+                size = random.randint(2, len(ab))
+                i = random.randint(0, len(ab)-size)
+                ab = ab[i:i+size]
+
             context = ab.mean(0)
 
             for i in range(len(ab)):
