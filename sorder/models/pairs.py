@@ -277,11 +277,9 @@ class BeamSearch:
                 if i not in path:
                     new_beam.append(((*path, i), score))
 
-        ctx = self.sents.mean(0)
-
         # Get input tensors from final two sents in each path.
         x = torch.stack([
-            torch.cat([ctx, self.sents[p[-2]], self.sents[p[-1]]])
+            torch.cat([self.sents[p[-2]], self.sents[p[-1]]])
             for p, _ in new_beam
         ])
 
