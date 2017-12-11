@@ -253,7 +253,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
 class BeamSearch:
 
-    def __init__(self, sents, model, beam_size=1000):
+    def __init__(self, sents, model, beam_size):
         """Initialize containers.
 
         Args:
@@ -308,7 +308,8 @@ class BeamSearch:
         return self.beam[0][0]
 
 
-def predict(test_path, m1_path, m2_path, test_skim, map_source, map_target):
+def predict(test_path, m1_path, m2_path, test_skim, beam_size,
+    map_source, map_target):
     """Predict order.
     """
     test = Corpus(test_path, test_skim)
@@ -327,7 +328,7 @@ def predict(test_path, m1_path, m2_path, test_skim, map_source, map_target):
         for ab, sents in zip(batch.abstracts, encoded):
 
             gold = np.argsort([s.order for s in ab.sentences])
-            pred = BeamSearch(sents, m2).search()
+            pred = BeamSearch(sents, m2, beam_size).search()
 
             kt, _ = stats.kendalltau(gold, pred)
             kts.append(kt)

@@ -29,6 +29,7 @@ def train(*args, **kwargs):
 @click.argument('m1_path', type=click.Path())
 @click.argument('m2_path', type=click.Path())
 @click.option('--test_skim', type=int, default=10000)
+@click.option('--beam_size', type=int, default=500)
 @click.option('--map_source', default='cpu')
 @click.option('--map_target', default='cpu')
 def predict(*args, **kwargs):
