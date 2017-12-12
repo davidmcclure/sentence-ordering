@@ -131,10 +131,11 @@ class Encoder(nn.Module):
         self.lstm = nn.LSTM(input_dim, lstm_dim, batch_first=True,
             bidirectional=True)
 
-    def forward(self, x):
+    def forward(self, x, reorder):
         _, (hn, cn) = self.lstm(x)
         # Cat forward + backward hidden layers.
-        return hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
+        out = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
+        return out[reorder]
 
 
 class Classifier(nn.Module):
@@ -164,7 +165,7 @@ def train_batch(batch, sentence_encoder, window_encoder, classifier):
     x, reorder = batch.packed_sentence_tensor()
 
     # Encode sentences.
-    sents = sentence_encoder(x)[reorder]
+    sents = sentence_encoder(x, reorder)
 
     # Generate positive / negative examples.
     examples = []
@@ -190,7 +191,7 @@ def train_batch(batch, sentence_encoder, window_encoder, classifier):
     windows, reorder = pad_and_pack(windows, 10)
 
     # Encode windows.
-    windows = window_encoder(windows)[reorder]
+    windows = window_encoder(windows, reorder)
 
     # Stack (context, sentence).
     x = torch.stack([
