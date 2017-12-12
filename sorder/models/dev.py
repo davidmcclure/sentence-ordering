@@ -133,7 +133,7 @@ class Encoder(nn.Module):
 
     def forward(self, x):
         _, (hn, cn) = self.lstm(x)
-        return hn[-1].squeeze()
+        return hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
 
 
 class Classifier(nn.Module):
@@ -209,8 +209,8 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     train = Corpus(train_path, train_skim)
 
     sent_encoder = Encoder(300, lstm_dim)
-    window_encoder = Encoder(lstm_dim, lstm_dim)
-    classifier = Classifier(2*lstm_dim, lin_dim)
+    window_encoder = Encoder(2*lstm_dim, lstm_dim)
+    classifier = Classifier(4*lstm_dim, lin_dim)
 
     params = (
         list(sent_encoder.parameters()) +
