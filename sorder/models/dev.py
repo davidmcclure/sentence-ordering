@@ -89,7 +89,7 @@ class Batch:
         """Pack sentence tensors.
         """
         sents = [
-            Variable(s.tensor())
+            Variable(s.tensor()).type(ftype)
             for a in self.abstracts
             for s in a.sentences
         ]
