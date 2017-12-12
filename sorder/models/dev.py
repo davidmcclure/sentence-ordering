@@ -174,7 +174,7 @@ def train_batch(batch, sentence_encoder, window_encoder, classifier):
 
             window = ab[i:]
 
-            # Shuffle context.
+            # Shuffle window.
             perm = torch.randperm(len(window)).type(itype)
             shuffled_window = window[perm]
 
@@ -254,75 +254,9 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
             epoch_correct += (y_pred.round() == y).sum().data[0]
             epoch_total += len(y)
 
-        # checkpoint(model_path, 'm1', m1, epoch)
-        # checkpoint(model_path, 'm2', m2, epoch)
+        checkpoint(model_path, 'sent_encoder', sent_encoder, epoch)
+        checkpoint(model_path, 'window_encoder', window_encoder, epoch)
+        checkpoint(model_path, 'classifier', classifier, epoch)
 
         print(epoch_loss / epoch_size)
         print(epoch_correct / epoch_total)
-
-
-# class PickFirst:
-
-    # def __init__(self, sents, model):
-
-        # self.sents = sents
-        # self.model = model
-
-        # self.order = torch.LongTensor(range(len(sents)))
-
-    # def swap(self, i1, i2):
-        # """Given a context, predict first sentence, swap into place.
-        # """
-        # context = self.sents[self.order][i1:i2]
-
-        # context_mean = context.mean(0)
-
-        # x = torch.stack([
-            # torch.cat([context_mean, sent])
-            # for sent in context
-        # ])
-
-        # pred = self.model(x)
-        # midx = i1 + np.argmax(pred.data.tolist())
-
-        # # Swap max into first slot.
-        # self.order[i1], self.order[midx] = self.order[midx], self.order[i1]
-
-    # def predict(self):
-        # """Pick first for all right-side contexts.
-        # """
-        # for i in range(len(self.sents)):
-            # self.swap(i, len(self.sents)+1)
-
-        # return self.order.tolist()
-
-
-# def predict(test_path, m1_path, m2_path, test_skim, map_source, map_target):
-    # """Predict order.
-    # """
-    # test = Corpus(test_path, test_skim)
-
-    # m1 = torch.load(m1_path, map_location={map_source: map_target})
-    # m2 = torch.load(m2_path, map_location={map_source: map_target})
-
-    # kts = []
-    # correct = 0
-    # for batch in tqdm(test.batches(100)):
-
-        # batch.shuffle()
-
-        # encoded = m1.encode_batch(batch)
-
-        # for ab, sents in zip(batch.abstracts, encoded):
-
-            # gold = np.argsort([s.position for s in ab.sentences])
-            # pred = PickFirst(sents, m2).predict()
-
-            # kt, _ = stats.kendalltau(gold, pred)
-            # kts.append(kt)
-
-            # if kt == 1:
-                # correct += 1
-
-    # print(sum(kts) / len(kts))
-    # print(correct / len(kts))
