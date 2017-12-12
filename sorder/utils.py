@@ -28,13 +28,17 @@ def pad(variable, size):
 
     Returns: padded variable, size
     """
+    # Truncate long inputs.
     variable = variable[:size]
 
-    pad_size = size - variable.size(0)
+    var_size = variable.size(0)
 
-    padding = Variable(torch.zeros(pad_size, *variable.size()[1:]))
+    # If too short, pad to length.
+    if var_size < size:
+        padding = torch.zeros(size - var_size, *variable.size()[1:])
+        variable = torch.cat([variable, Variable(padding)])
 
-    return torch.cat([variable, padding]), variable.size(0)
+    return variable, var_size
 
 
 def pack(batch, sizes, batch_first=True):
