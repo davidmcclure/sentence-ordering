@@ -38,7 +38,7 @@ def pack(tensor, sizes, batch_first=True):
     size_sort = np.argsort(sizes)[::-1].tolist()
 
     # Sort the tensor by size.
-    tensor = tensor[torch.LongTensor(size_sort)].type(ftype)
+    tensor = tensor[torch.LongTensor(size_sort)]
 
     # Sort sizes descending.
     sizes = np.array(sizes)[size_sort].tolist()
@@ -46,7 +46,7 @@ def pack(tensor, sizes, batch_first=True):
     tensor = pack_padded_sequence(tensor, sizes, batch_first)
 
     # Indexes to restore original order.
-    reorder = torch.LongTensor(np.argsort(size_sort)).type(itype)
+    reorder = torch.LongTensor(np.argsort(size_sort))
 
     return tensor, reorder
 
