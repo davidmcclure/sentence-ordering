@@ -133,6 +133,7 @@ class Encoder(nn.Module):
 
     def forward(self, x):
         _, (hn, cn) = self.lstm(x)
+        # Cat forward + backward hidden layers.
         return hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
 
 
