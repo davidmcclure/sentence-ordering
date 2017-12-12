@@ -22,13 +22,11 @@ def checkpoint(root, key, model, epoch):
 def pad(tensor, size):
     """Zero-pad a tensor to given length on the right.
     """
-    if len(tensor) >= size:
-        return tensor[:size], size
+    tensor = tensor[:size]
 
     pad_size = size - tensor.size(0)
 
-    padding = tensor.data.new(pad_size, *tensor.size()[1:]).zero_()
-    padding = Variable(padding)
+    padding = Variable(torch.zeros(pad_size, *tensor.size()[1:]))
 
     return torch.cat([tensor, padding]), tensor.size(0)
 
