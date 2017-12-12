@@ -176,7 +176,7 @@ def train_batch(batch, sent_encoder, left_encoder, right_encoder, classifier):
 
             # If first step, empdy left context.
             left = (
-                Variable(torch.zeros(1, ab.data.shape[1]))
+                Variable(torch.zeros(1, ab.data.shape[1])).type(ftype)
                 if i == 0 else ab[:i]
             )
 
