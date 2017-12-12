@@ -31,6 +31,7 @@ def pad(variable, size):
     # Truncate long inputs.
     variable = variable[:size]
 
+    # Original data size.
     var_size = variable.size(0)
 
     # If too short, pad to length.
