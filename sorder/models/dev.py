@@ -167,7 +167,8 @@ def train_batch(batch, sentence_encoder, window_encoder, classifier):
             window = ab[i:]
 
             # Shuffle context.
-            shuffled_window = window[torch.randperm(len(window))]
+            perm = torch.randperm(len(window)).type(itype)
+            shuffled_window = window[perm]
 
             first = window[0]
             other = random.choice(window[1:])
