@@ -236,8 +236,8 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     if CUDA:
         sent_encoder = sent_encoder.cuda()
-        left_encoder = window_encoder.cuda()
-        right_encoder = window_encoder.cuda()
+        left_encoder = left_encoder.cuda()
+        right_encoder = right_encoder.cuda()
         classifier = classifier.cuda()
 
     for epoch in range(epochs):
