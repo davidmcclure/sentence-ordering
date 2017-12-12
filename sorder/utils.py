@@ -22,7 +22,8 @@ def checkpoint(root, key, model, epoch):
 def pad(tensor, size):
     """Zero-pad a tensor to given length on the right.
     """
-    tensor = tensor[:size]
+    if len(tensor) >= size:
+        return tensor[:size]
 
     pad_size = size - tensor.size(0)
 
