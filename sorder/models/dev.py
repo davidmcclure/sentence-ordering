@@ -136,7 +136,7 @@ class Encoder(nn.Module):
         return hn[-1].squeeze()
 
 
-class Regressor(nn.Module):
+class Classifier(nn.Module):
 
     def __init__(self, input_dim, lin_dim):
         super().__init__()
@@ -151,7 +151,7 @@ class Regressor(nn.Module):
         return y.squeeze()
 
 
-def train_batch(batch, sentence_encoder, window_encoder, regressor):
+def train_batch(batch, sentence_encoder, window_encoder, classifier):
     """Train the batch.
     """
     x, reorder = batch.packed_sentence_tensor()
@@ -192,7 +192,7 @@ def train_batch(batch, sentence_encoder, window_encoder, regressor):
 
     y = Variable(torch.FloatTensor(ys)).type(ftype)
 
-    return y, regressor(x)
+    return y, classifier(x)
 
 
 def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
@@ -201,17 +201,24 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     """
     train = Corpus(train_path, train_skim)
 
-    m1 = SentenceEncoder(lstm_dim)
-    m2 = Regressor(lstm_dim*2+1, lin_dim)
+    sent_encoder = Encoder(300, lstm_dim)
+    window_encoder = Encoder(lstm_dim, lstm_dim)
+    classifier = Classifier(2*lstm_dim, lin_dim)
 
-    params = list(m1.parameters()) + list(m2.parameters())
+    params = (
+        list(sent_encoder.parameters()) +
+        list(window_encoder.parameters()) +
+        list(classifier.parameters())
+    )
+
     optimizer = torch.optim.Adam(params, lr=lr)
 
     loss_func = nn.BCELoss()
 
     if CUDA:
-        m1 = m1.cuda()
-        m2 = m2.cuda()
+        sent_encoder = sent_encoder.cuda()
+        window_encoder = window_encoder.cuda()
+        classifier = classifier.cuda()
 
     for epoch in range(epochs):
 
@@ -226,9 +233,8 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             batch = train.random_batch(batch_size)
 
-            x, y = m1.batch_xy(batch)
-
-            y_pred = m2(x)
+            y, y_pred = train_batch(batch, sent_encoder, \
+                window_encoder, classifier)
 
             loss = loss_func(y_pred, y)
             loss.backward()
@@ -239,75 +245,75 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
             epoch_correct += (y_pred.round() == y).sum().data[0]
             epoch_total += len(y)
 
-        checkpoint(model_path, 'm1', m1, epoch)
-        checkpoint(model_path, 'm2', m2, epoch)
+        # checkpoint(model_path, 'm1', m1, epoch)
+        # checkpoint(model_path, 'm2', m2, epoch)
 
         print(epoch_loss / epoch_size)
         print(epoch_correct / epoch_total)
 
 
-class PickFirst:
+# class PickFirst:
 
-    def __init__(self, sents, model):
+    # def __init__(self, sents, model):
 
-        self.sents = sents
-        self.model = model
+        # self.sents = sents
+        # self.model = model
 
-        self.order = torch.LongTensor(range(len(sents)))
+        # self.order = torch.LongTensor(range(len(sents)))
 
-    def swap(self, i1, i2):
-        """Given a context, predict first sentence, swap into place.
-        """
-        context = self.sents[self.order][i1:i2]
+    # def swap(self, i1, i2):
+        # """Given a context, predict first sentence, swap into place.
+        # """
+        # context = self.sents[self.order][i1:i2]
 
-        context_mean = context.mean(0)
+        # context_mean = context.mean(0)
 
-        x = torch.stack([
-            torch.cat([context_mean, sent])
-            for sent in context
-        ])
+        # x = torch.stack([
+            # torch.cat([context_mean, sent])
+            # for sent in context
+        # ])
 
-        pred = self.model(x)
-        midx = i1 + np.argmax(pred.data.tolist())
+        # pred = self.model(x)
+        # midx = i1 + np.argmax(pred.data.tolist())
 
-        # Swap max into first slot.
-        self.order[i1], self.order[midx] = self.order[midx], self.order[i1]
+        # # Swap max into first slot.
+        # self.order[i1], self.order[midx] = self.order[midx], self.order[i1]
 
-    def predict(self):
-        """Pick first for all right-side contexts.
-        """
-        for i in range(len(self.sents)):
-            self.swap(i, len(self.sents)+1)
+    # def predict(self):
+        # """Pick first for all right-side contexts.
+        # """
+        # for i in range(len(self.sents)):
+            # self.swap(i, len(self.sents)+1)
 
-        return self.order.tolist()
+        # return self.order.tolist()
 
 
-def predict(test_path, m1_path, m2_path, test_skim, map_source, map_target):
-    """Predict order.
-    """
-    test = Corpus(test_path, test_skim)
+# def predict(test_path, m1_path, m2_path, test_skim, map_source, map_target):
+    # """Predict order.
+    # """
+    # test = Corpus(test_path, test_skim)
 
-    m1 = torch.load(m1_path, map_location={map_source: map_target})
-    m2 = torch.load(m2_path, map_location={map_source: map_target})
+    # m1 = torch.load(m1_path, map_location={map_source: map_target})
+    # m2 = torch.load(m2_path, map_location={map_source: map_target})
 
-    kts = []
-    correct = 0
-    for batch in tqdm(test.batches(100)):
+    # kts = []
+    # correct = 0
+    # for batch in tqdm(test.batches(100)):
 
-        batch.shuffle()
+        # batch.shuffle()
 
-        encoded = m1.encode_batch(batch)
+        # encoded = m1.encode_batch(batch)
 
-        for ab, sents in zip(batch.abstracts, encoded):
+        # for ab, sents in zip(batch.abstracts, encoded):
 
-            gold = np.argsort([s.position for s in ab.sentences])
-            pred = PickFirst(sents, m2).predict()
+            # gold = np.argsort([s.position for s in ab.sentences])
+            # pred = PickFirst(sents, m2).predict()
 
-            kt, _ = stats.kendalltau(gold, pred)
-            kts.append(kt)
+            # kt, _ = stats.kendalltau(gold, pred)
+            # kts.append(kt)
 
-            if kt == 1:
-                correct += 1
+            # if kt == 1:
+                # correct += 1
 
-    print(sum(kts) / len(kts))
-    print(correct / len(kts))
+    # print(sum(kts) / len(kts))
+    # print(correct / len(kts))
