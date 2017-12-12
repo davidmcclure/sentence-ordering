@@ -142,11 +142,17 @@ class Classifier(nn.Module):
         super().__init__()
         self.lin1 = nn.Linear(input_dim, lin_dim)
         self.lin2 = nn.Linear(lin_dim, lin_dim)
+        self.lin3 = nn.Linear(lin_dim, lin_dim)
+        self.lin4 = nn.Linear(lin_dim, lin_dim)
+        self.lin5 = nn.Linear(lin_dim, lin_dim)
         self.out = nn.Linear(lin_dim, 1)
 
     def forward(self, x):
         y = F.relu(self.lin1(x))
         y = F.relu(self.lin2(y))
+        y = F.relu(self.lin3(y))
+        y = F.relu(self.lin4(y))
+        y = F.relu(self.lin5(y))
         y = F.sigmoid(self.out(y))
         return y.squeeze()
 

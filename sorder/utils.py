@@ -40,7 +40,7 @@ def pack(tensor, sizes, batch_first=True):
     size_sort = np.argsort(sizes)[::-1].tolist()
 
     # Sort the tensor by size.
-    tensor = tensor[torch.LongTensor(size_sort)].type(ttype)
+    tensor = tensor[torch.LongTensor(size_sort)].type(ftype)
 
     # Sort sizes descending.
     sizes = np.array(sizes)[size_sort].tolist()
