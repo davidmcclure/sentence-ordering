@@ -35,7 +35,7 @@ def pad(variable, size):
 
     # If too short, pad to length.
     if var_size < size:
-        padding = torch.zeros(size - var_size, *variable.size()[1:])
+        padding = variable.data.new(size-var_size, *variable.size()[1:])
         variable = torch.cat([variable, Variable(padding)])
 
     return variable, var_size
