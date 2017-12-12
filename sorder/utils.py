@@ -23,7 +23,7 @@ def pad(tensor, size):
     """Zero-pad a tensor to given length on the right.
     """
     if len(tensor) >= size:
-        return tensor[:size]
+        return tensor[:size], size
 
     pad_size = size - tensor.size(0)
 

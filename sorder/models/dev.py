@@ -48,7 +48,7 @@ class Sentence:
 
     tokens = attr.ib()
 
-    def tensor(self, dim=300, pad=50):
+    def tensor(self, dim=300):
         """Stack word vectors.
         """
         x = [
