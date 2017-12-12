@@ -27,12 +27,13 @@ def pad(tensor, size):
 
     pad_size = size - tensor.size(0)
 
-    padding = Variable(torch.zeros(pad_size, *tensor.size()[1:]))
+    padding = tensor.data.new(pad_size, *tensor.size()[1:]).zero_()
+    padding = Variable(padding)
 
     return torch.cat([tensor, padding]), tensor.size(0)
 
 
-def pack(tensor, sizes, ttype=ftype, batch_first=True):
+def pack(tensor, sizes, batch_first=True):
     """Pack padded tensors, provide reorder indexes.
     """
     # Get indexes for sorted sizes.
