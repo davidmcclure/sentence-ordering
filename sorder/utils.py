@@ -19,44 +19,56 @@ def checkpoint(root, key, model, epoch):
     torch.save(model, path)
 
 
-def pad(tensor, size):
-    """Zero-pad a tensor to given length on the right.
+def pad(variable, size):
+    """Zero-pad a variable to given length on the right.
+
+    Args:
+        variable (Variable)
+        size (int)
+
+    Returns: padded variable, size
     """
-    tensor = tensor[:size]
+    variable = variable[:size]
 
-    pad_size = size - tensor.size(0)
+    pad_size = size - variable.size(0)
 
-    padding = Variable(torch.zeros(pad_size, *tensor.size()[1:]))
+    padding = Variable(torch.zeros(pad_size, *variable.size()[1:]))
 
-    return torch.cat([tensor, padding]), tensor.size(0)
+    return torch.cat([variable, padding]), variable.size(0)
 
 
-def pack(tensor, sizes, batch_first=True):
-    """Pack padded tensors, provide reorder indexes.
+def pack(batch, sizes, batch_first=True):
+    """Pack padded variables, provide reorder indexes.
+
+    Args:
+        batch (Variable)
+        sizes (list[int])
+
+    Returns: packed sequence, reorder indexes
     """
     # Get indexes for sorted sizes.
     size_sort = np.argsort(sizes)[::-1].tolist()
 
     # Sort the tensor by size.
-    tensor = tensor[torch.LongTensor(size_sort)]
+    batch = batch[torch.LongTensor(size_sort)]
 
     # Sort sizes descending.
     sizes = np.array(sizes)[size_sort].tolist()
 
-    tensor = pack_padded_sequence(tensor, sizes, batch_first)
+    batch = pack_padded_sequence(batch, sizes, batch_first)
 
     # Indexes to restore original order.
     reorder = torch.LongTensor(np.argsort(size_sort))
 
-    return tensor, reorder
+    return batch, reorder
 
 
-def pad_and_pack(tensors, size, *args, **kwargs):
+def pad_and_pack(variables, size, *args, **kwargs):
     """Pad a list of tensors to a given length, pack.
 
     Args:
         tensors (list): Variable-length tensors.
     """
-    padded, sizes = zip(*[pad(t, size) for t in tensors])
+    padded, sizes = zip(*[pad(v, size) for v in variables])
 
     return pack(torch.stack(padded), sizes, *args, **kwargs)
