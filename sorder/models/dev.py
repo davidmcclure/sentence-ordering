@@ -22,7 +22,7 @@ from torch.nn import functional as F
 
 from sorder.cuda import CUDA, ftype, itype
 from sorder.vectors import LazyVectors
-from sorder.utils import checkpoint, pack
+from sorder.utils import checkpoint, pad_and_pack
 
 
 vectors = LazyVectors.read()
@@ -46,26 +46,21 @@ def read_abstracts(path, maxlen):
 @attr.s
 class Sentence:
 
-    position = attr.ib()
     tokens = attr.ib()
 
     def tensor(self, dim=300, pad=50):
-        """Stack word vectors, padding zeros on left.
+        """Stack word vectors.
         """
-        # Map words to embeddings.
         x = [
             vectors[t] if t in vectors else np.zeros(dim)
             for t in self.tokens
         ]
 
-        # Pad zeros.
-        x += [np.zeros(dim)] * pad
-        x = x[:pad]
         x = np.array(x)
         x = torch.from_numpy(x)
         x = x.float()
 
-        return x, len(self.tokens)
+        return x
 
 
 @attr.s
@@ -80,8 +75,8 @@ class Abstract:
         json = ujson.loads(line.strip())
 
         return cls([
-            Sentence(i, s['token'])
-            for i, s in enumerate(json['sentences'])
+            Sentence(s['token'])
+            for s in json['sentences']
         ])
 
 
@@ -90,25 +85,25 @@ class Batch:
 
     abstracts = attr.ib()
 
-    def sentence_tensor_iter(self):
-        """Generate (tensor, size) pairs for each sentence.
+    def packed_sentence_tensor(self, size=50):
+        """Pack sentence tensors.
         """
+        sents = [
+            Variable(s.tensor())
+            for a in self.abstracts
+            for s in a.sentences
+        ]
+
+        return pad_and_pack(sents, size)
+
+    def unpack_sentences(self, encoded):
+        """Unpack encoded sentences.
+        """
+        start = 0
         for ab in self.abstracts:
-            for sent in ab.sentences:
-                yield sent.tensor()
-
-    def packed_sentence_tensor(self):
-        """Stack sentence tensors for all abstracts.
-        """
-        tensors, sizes = zip(*self.sentence_tensor_iter())
-
-        return pack(torch.stack(tensors), sizes, ftype)
-
-    def shuffle(self):
-        """Shuffle sentences in all abstracts.
-        """
-        for ab in self.abstracts:
-            random.shuffle(ab.sentences)
+            end = start + len(ab.sentences)
+            yield encoded[start:end]
+            start = end
 
 
 class Corpus:
@@ -128,64 +123,17 @@ class Corpus:
         """
         return Batch(random.sample(self.abstracts, size))
 
-    def batches(self, size):
-        """Iterate all batches.
-        """
-        for abstracts in chunked_iter(self.abstracts, size):
-            yield Batch(abstracts)
 
+class Encoder(nn.Module):
 
-class SentenceEncoder(nn.Module):
-
-    def __init__(self, lstm_dim):
+    def __init__(self, input_dim, lstm_dim):
         super().__init__()
-        self.lstm = nn.LSTM(300, lstm_dim, batch_first=True,
+        self.lstm = nn.LSTM(input_dim, lstm_dim, batch_first=True,
             bidirectional=True)
 
     def forward(self, x):
         _, (hn, cn) = self.lstm(x)
         return hn[-1].squeeze()
-
-    def encode_batch(self, batch):
-        """Encode sentences in a batch, then regroup by abstract.
-        """
-        x, size_sort = batch.packed_sentence_tensor()
-
-        reorder = torch.LongTensor(np.argsort(size_sort)).type(itype)
-
-        y = self(x)[reorder]
-
-        start = 0
-        for ab in batch.abstracts:
-            end = start + len(ab.sentences)
-            yield y[start:end]
-            start = end
-
-    def batch_xy(self, batch):
-        """Encode sentences, generate positive and negative pairs.
-        """
-        x = []
-        y = []
-        for ab in self.encode_batch(batch):
-            for i in range(len(ab)-2):
-
-                window = ab[i:]
-                context = window.mean(0)
-
-                size = Variable(torch.FloatTensor([len(window)])).type(ftype)
-
-                # First.
-                x.append(torch.cat([context, window[0], size]))
-                y.append(1)
-
-                # Not first.
-                x.append(torch.cat([context, random.choice(window[1:]), size]))
-                y.append(0)
-
-        x = torch.stack(x)
-        y = Variable(torch.FloatTensor(y)).type(ftype)
-
-        return x, y
 
 
 class Regressor(nn.Module):
@@ -201,6 +149,50 @@ class Regressor(nn.Module):
         y = F.relu(self.lin2(y))
         y = F.sigmoid(self.out(y))
         return y.squeeze()
+
+
+def train_batch(batch, sentence_encoder, window_encoder, regressor):
+    """Train the batch.
+    """
+    x, reorder = batch.packed_sentence_tensor()
+
+    # Encode sentences.
+    sents = sentence_encoder(x)[reorder]
+
+    # Generate positive / negative examples.
+    examples = []
+    for ab in batch.unpack_sentences(sents):
+        for i in range(len(ab)-2):
+
+            window = ab[i:]
+
+            # Shuffle context.
+            shuffled_window = window[torch.randperm(len(window))]
+
+            first = window[0]
+            other = random.choice(window[1:])
+
+            # First / not-first.
+            examples.append((shuffled_window, first, 1))
+            examples.append((shuffled_window, other, 0))
+
+    windows, sentences, ys = zip(*examples)
+
+    # Pad / pack windows.
+    windows, reorder = pad_and_pack(windows, 10)
+
+    # Encode windows.
+    windows = window_encoder(windows)[reorder]
+
+    # Stack (context, sentence).
+    x = torch.stack([
+        torch.cat([w, s])
+        for w, s in zip(windows, sentences)
+    ])
+
+    y = Variable(torch.FloatTensor(ys)).type(ftype)
+
+    return y, regressor(x)
 
 
 def train(train_path, model_path, train_skim, lr, epochs, epoch_size,

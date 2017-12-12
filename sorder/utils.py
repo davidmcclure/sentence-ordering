@@ -8,6 +8,8 @@ import torch
 from torch.nn.utils.rnn import pack_padded_sequence
 from torch.autograd import Variable
 
+from .cuda import ftype, itype
+
 
 def checkpoint(root, key, model, epoch):
     """Save model checkpoint.
@@ -17,7 +19,19 @@ def checkpoint(root, key, model, epoch):
     torch.save(model, path)
 
 
-def pack(tensor, sizes, ttype, batch_first=True):
+def pad(tensor, size):
+    """Zero-pad a tensor to given length on the right.
+    """
+    tensor = tensor[:size]
+
+    pad_size = size - tensor.size(0)
+
+    padding = Variable(torch.zeros(pad_size, *tensor.size()[1:]))
+
+    return torch.cat([tensor, padding]), tensor.size(0)
+
+
+def pack(tensor, sizes, ttype=ftype, batch_first=True):
     """Pack padded tensors, provide reorder indexes.
     """
     # Get indexes for sorted sizes.
@@ -25,21 +39,24 @@ def pack(tensor, sizes, ttype, batch_first=True):
 
     # Sort the tensor by size.
     tensor = tensor[torch.LongTensor(size_sort)].type(ttype)
-    tensor = Variable(tensor)
 
     # Sort sizes descending.
     sizes = np.array(sizes)[size_sort].tolist()
 
     tensor = pack_padded_sequence(tensor, sizes, batch_first)
 
-    return tensor, size_sort
+    # Indexes to restore original order.
+    reorder = torch.LongTensor(np.argsort(size_sort)).type(itype)
+
+    return tensor, reorder
 
 
-def pad(tensor, length):
-    """Zero-pad a tensor to given length on the right.
+def pad_and_pack(tensors, size, *args, **kwargs):
+    """Pad a list of tensors to a given length, pack.
+
+    Args:
+        tensors (list): Variable-length tensors.
     """
-    pad_size = length - tensor.size(0)
+    padded, sizes = zip(*[pad(t, size) for t in tensors])
 
-    padding = tensor.new(pad_size, *tensor.size()[1:]).zero_()
-
-    return torch.cat([tensor, padding])
+    return pack(torch.stack(padded), sizes, *args, **kwargs)
