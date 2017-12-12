@@ -35,7 +35,10 @@ def pad(variable, size):
 
     # If too short, pad to length.
     if var_size < size:
+
         padding = variable.data.new(size-var_size, *variable.size()[1:])
+        padding = padding.zero_()
+
         variable = torch.cat([variable, Variable(padding)])
 
     return variable, var_size
@@ -54,7 +57,7 @@ def pack(batch, sizes, batch_first=True):
     size_sort = np.argsort(sizes)[::-1].tolist()
 
     # Sort the tensor by size.
-    batch = batch[torch.LongTensor(size_sort)]
+    batch = batch[torch.LongTensor(size_sort).type(itype)]
 
     # Sort sizes descending.
     sizes = np.array(sizes)[size_sort].tolist()
@@ -62,7 +65,7 @@ def pack(batch, sizes, batch_first=True):
     batch = pack_padded_sequence(batch, sizes, batch_first)
 
     # Indexes to restore original order.
-    reorder = torch.LongTensor(np.argsort(size_sort))
+    reorder = torch.LongTensor(np.argsort(size_sort)).type(itype)
 
     return batch, reorder
 
