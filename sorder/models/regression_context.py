@@ -178,8 +178,10 @@ def train_batch(batch, sent_encoder, graf_encoder, regressor):
 
             length = Variable(torch.FloatTensor([len(ab)])).type(ftype)
 
+            y = i / (len(ab)-1)
+
             # Graf, sentence, length, position.
-            examples.append((graf, ab[i], length, i))
+            examples.append((graf, ab[i], length, y))
 
     grafs, sentences, lengths, positions = zip(*examples)
 
