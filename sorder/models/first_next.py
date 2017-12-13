@@ -46,6 +46,7 @@ def read_abstracts(path, maxlen):
 @attr.s
 class Sentence:
 
+    position = attr.ib()
     tokens = attr.ib()
 
     def tensor(self, dim=300):
@@ -75,8 +76,8 @@ class Abstract:
         json = ujson.loads(line.strip())
 
         return cls([
-            Sentence(s['token'])
-            for s in json['sentences']
+            Sentence(i, s['token'])
+            for i, s in enumerate(json['sentences'])
         ])
 
 
@@ -105,6 +106,12 @@ class Batch:
             yield encoded[start:end]
             start = end
 
+    def shuffle(self):
+        """Shuffle sentences in all abstracts.
+        """
+        for ab in self.abstracts:
+            random.shuffle(ab.sentences)
+
 
 class Corpus:
 
@@ -122,6 +129,12 @@ class Corpus:
         """Query random batch.
         """
         return Batch(random.sample(self.abstracts, size))
+
+    def batches(self, size):
+        """Iterate all batches.
+        """
+        for abstracts in chunked_iter(self.abstracts, size):
+            yield Batch(abstracts)
 
 
 class Encoder(nn.Module):
@@ -310,3 +323,39 @@ def greedy_order(sents, left_encoder, right_encoder, classifier):
         order.append(pred)
 
     return order
+
+
+def predict(test_path, sent_encoder_path, left_encoder_path,
+    right_encoder_path, classifier_path, test_skim, map_source, map_target):
+    """Predict order.
+    """
+    test = Corpus(test_path, test_skim)
+
+    dmap = {map_source: map_target}
+
+    sent_encoder = torch.load(sent_encoder_path, dmap)
+    left_encoder = torch.load(left_encoder_path, dmap)
+    right_encoder = torch.load(right_encoder_path, dmap)
+    classifier = torch.load(classifier_path, dmap)
+
+    kts = []
+    for batch in tqdm(test.batches(10)):
+
+        batch.shuffle()
+
+        # Encode sentences.
+        x, reorder = batch.packed_sentence_tensor()
+        encoded = sent_encoder(x, reorder)
+
+        unpacked = batch.unpack_sentences(encoded)
+
+        for ab, sents in zip(batch.abstracts, unpacked):
+
+            pred = greedy_order(sents, left_encoder, right_encoder, classifier)
+            gold = np.argsort([s.position for s in ab.sentences])
+
+            kt, _ = stats.kendalltau(gold, pred)
+            kts.append(kt)
+
+    print(sum(kts) / len(kts))
+    print(kts.count(1) / len(kts))
