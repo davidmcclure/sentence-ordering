@@ -272,3 +272,41 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
         print(epoch_loss / epoch_size)
         print(epoch_correct / epoch_total)
+
+
+def greedy_order(sents, left_encoder, right_encoder, classifier):
+    """Order greedy.
+    """
+    order = []
+
+    while len(order) < len(sents):
+
+        # Left sentences.
+        if len(order) == 0:
+            left = Variable(torch.zeros(1, sents.data.shape[1])).type(ftype)
+
+        else:
+            left = sents[torch.LongTensor(order).type(itype)]
+
+        # Right sentences.
+        right_idx = [i for i in range(len(sents)) if i not in order]
+        candidates = sents[torch.LongTensor(right_idx).type(itype)]
+
+        # Encode left.
+        left, reorder = pad_and_pack([left], 10)
+        left = left_encoder(left, reorder)
+
+        # Encode right.
+        right, reorder = pad_and_pack([candidates], 10)
+        right = right_encoder(right, reorder)
+
+        # Cat (left, right, candidate).
+        x = torch.stack([
+            torch.cat([left[0], right[0], candidate])
+            for candidate in candidates
+        ])
+
+        pred = right_idx.pop(np.argmax(classifier(x).data.tolist()))
+        order.append(pred)
+
+    return order
