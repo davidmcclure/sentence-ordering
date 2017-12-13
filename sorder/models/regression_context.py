@@ -138,7 +138,7 @@ class Encoder(nn.Module):
         return out[reorder]
 
 
-class Classifier(nn.Module):
+class Regressor(nn.Module):
 
     def __init__(self, input_dim, lin_dim):
         super().__init__()
@@ -155,11 +155,11 @@ class Classifier(nn.Module):
         y = F.relu(self.lin3(y))
         y = F.relu(self.lin4(y))
         y = F.relu(self.lin5(y))
-        y = F.sigmoid(self.out(y))
+        y = self.out(y)
         return y.squeeze()
 
 
-def train_batch(batch, sent_encoder, left_encoder, right_encoder, classifier):
+def train_batch(batch, sent_encoder, graf_encoder, regressor):
     """Train the batch.
     """
     x, reorder = batch.packed_sentence_tensor()
@@ -167,52 +167,35 @@ def train_batch(batch, sent_encoder, left_encoder, right_encoder, classifier):
     # Encode sentences.
     sents = sent_encoder(x, reorder)
 
-    # Generate positive / negative examples.
+    # Generate x / y pairs.
     examples = []
     for ab in batch.unpack_sentences(sents):
-        for i in range(len(ab)-1):
+        for i in range(len(ab)):
 
-            # TODO: Include left/right lengths as dimensions?
-            # TODO: Prepend focus sentence to left / right?
+            # Graf = sentence + context.
+            perm = torch.randperm(len(ab)).type(itype)
+            graf = torch.cat([ab[i].unsqueeze(0), ab[perm]])
 
-            right = ab[i:]
+            length = Variable(torch.FloatTensor([len(ab)])).type(ftype)
 
-            # If first step, empdy left context.
-            left = (
-                Variable(torch.zeros(1, ab.data.shape[1])).type(ftype)
-                if i == 0 else ab[:i]
-            )
+            # Graf, sentence, length, position.
+            examples.append((graf, ab[i], length, i))
 
-            # Shuffle right.
-            perm = torch.randperm(len(right)).type(itype)
-            shuffled_right = right[perm]
+    grafs, sentences, lengths, positions = zip(*examples)
 
-            first = right[0]
-            other = random.choice(right[1:])
+    # Encode grafs.
+    grafs, reorder = pad_and_pack(grafs, 10)
+    grafs = graf_encoder(grafs, reorder)
 
-            # First / not-first.
-            examples.append((left, shuffled_right, first, 1))
-            examples.append((left, shuffled_right, other, 0))
-
-    lefts, rights, candidates, ys = zip(*examples)
-
-    # Encode lefts.
-    lefts, reorder = pad_and_pack(lefts, 10)
-    lefts = left_encoder(lefts, reorder)
-
-    # Encode rights.
-    rights, reorder = pad_and_pack(rights, 10)
-    rights = right_encoder(rights, reorder)
-
-    # Cat (left, right, candidate).
+    # <graf, sentence, length>
     x = torch.stack([
-        torch.cat([left, right, candidate])
-        for left, right, candidate in zip(lefts, rights, candidates)
+        torch.cat([graf, sentence, length])
+        for graf, sentence, length in zip(grafs, sentences, lengths)
     ])
 
-    y = Variable(torch.FloatTensor(ys)).type(ftype)
+    y = Variable(torch.FloatTensor(positions)).type(ftype)
 
-    return y, classifier(x)
+    return y, regressor(x)
 
 
 def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
@@ -222,42 +205,37 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     train = Corpus(train_path, train_skim)
 
     sent_encoder = Encoder(300, lstm_dim)
-    left_encoder = Encoder(2*lstm_dim, lstm_dim)
-    right_encoder = Encoder(2*lstm_dim, lstm_dim)
-    classifier = Classifier(6*lstm_dim, lin_dim)
+    graf_encoder = Encoder(2*lstm_dim, lstm_dim)
+    regressor = Regressor(4*lstm_dim+1, lin_dim)
 
     params = (
         list(sent_encoder.parameters()) +
-        list(left_encoder.parameters()) +
-        list(right_encoder.parameters()) +
-        list(classifier.parameters())
+        list(graf_encoder.parameters()) +
+        list(regressor.parameters())
     )
 
     optimizer = torch.optim.Adam(params, lr=lr)
 
-    loss_func = nn.BCELoss()
+    loss_func = nn.L1Loss()
 
     if CUDA:
         sent_encoder = sent_encoder.cuda()
-        left_encoder = left_encoder.cuda()
-        right_encoder = right_encoder.cuda()
-        classifier = classifier.cuda()
+        graf_encoder = graf_encoder.cuda()
+        regressor = regressor.cuda()
 
     for epoch in range(epochs):
 
         print(f'\nEpoch {epoch}')
 
         epoch_loss = 0
-        epoch_correct = 0
-        epoch_total = 0
         for _ in tqdm(range(epoch_size)):
 
             optimizer.zero_grad()
 
             batch = train.random_batch(batch_size)
 
-            y, y_pred = train_batch(batch, sent_encoder, left_encoder,
-                    right_encoder, classifier)
+            y, y_pred = train_batch(batch, sent_encoder, \
+                    graf_encoder, regressor)
 
             loss = loss_func(y_pred, y)
             loss.backward()
@@ -265,13 +243,11 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
             optimizer.step()
 
             epoch_loss += loss.data[0]
-            epoch_correct += (y_pred.round() == y).sum().data[0]
-            epoch_total += len(y)
 
-        checkpoint(model_path, 'sent_encoder', sent_encoder, epoch)
-        checkpoint(model_path, 'left_encoder', left_encoder, epoch)
-        checkpoint(model_path, 'right_encoder', right_encoder, epoch)
-        checkpoint(model_path, 'classifier', classifier, epoch)
+        # checkpoint(model_path, 'sent_encoder', sent_encoder, epoch)
+        # checkpoint(model_path, 'left_encoder', left_encoder, epoch)
+        # checkpoint(model_path, 'right_encoder', right_encoder, epoch)
+        # checkpoint(model_path, 'classifier', classifier, epoch)
 
         print(epoch_loss / epoch_size)
-        print(epoch_correct / epoch_total)
+        print(y[:10], y_pred[:10])
