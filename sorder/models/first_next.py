@@ -325,6 +325,70 @@ def greedy_order(sents, left_encoder, right_encoder, classifier):
     return order
 
 
+def beam_search(sents, left_encoder, right_encoder, classifier, beam_size=64):
+    """Beam search ordering.
+    """
+    # Left, right, score.
+    beam = [[[], range(len(sents)), 0]]
+
+    for _ in range(len(sents)):
+
+        new_beam = []
+        examples = []
+
+        for lidx, ridx, score in beam:
+            for r in ridx:
+
+                new_lidx = lidx + [r]
+                new_ridx = [i for i in ridx if i != r]
+
+                new_beam.append([new_lidx, new_ridx, score])
+
+                # Left sentences.
+                if len(lidx) == 0:
+                    left = torch.zeros(1, sents.data.shape[1])
+                    left = Variable(left).type(ftype)
+
+                else:
+                    left = sents[torch.LongTensor(lidx).type(itype)]
+
+                # Right sentences.
+                right = sents[torch.LongTensor(ridx).type(itype)]
+
+                examples.append((left, right, sents[r]))
+
+        lefts, rights, candidates = zip(*examples)
+
+        # Encode lefts.
+        lefts, reorder = pad_and_pack(lefts, 10)
+        lefts = left_encoder(lefts, reorder)
+
+        # Encode rights.
+        rights, reorder = pad_and_pack(rights, 10)
+        rights = right_encoder(rights, reorder)
+
+        # Cat (left, right, candidate).
+        x = torch.stack([
+            torch.cat([left, right, candidate])
+            for left, right, candidate in zip(lefts, rights, candidates)
+        ])
+
+        preds = classifier(x)
+
+        # Update scores.
+        for i in range(len(preds)):
+            new_beam[i][2] += preds[i].data[0]
+
+        # Sort by score.
+        new_beam = sorted(new_beam, key=lambda x: x[2], reverse=True)
+
+        # Keep N highest scoring paths.
+        beam = new_beam[:beam_size]
+        print(beam)
+
+    return beam[0][0]
+
+
 def predict(test_path, sent_encoder_path, left_encoder_path,
     right_encoder_path, classifier_path, test_skim, map_source, map_target):
     """Predict order.
@@ -351,7 +415,7 @@ def predict(test_path, sent_encoder_path, left_encoder_path,
 
         for ab, sents in zip(batch.abstracts, unpacked):
 
-            pred = greedy_order(sents, left_encoder, right_encoder, classifier)
+            pred = beam_search(sents, left_encoder, right_encoder, classifier)
             gold = np.argsort([s.position for s in ab.sentences])
 
             kt, _ = stats.kendalltau(gold, pred)
