@@ -384,7 +384,6 @@ def beam_search(sents, left_encoder, right_encoder, classifier, beam_size=64):
 
         # Keep N highest scoring paths.
         beam = new_beam[:beam_size]
-        print(beam)
 
     return beam[0][0]
 
@@ -421,5 +420,5 @@ def predict(test_path, sent_encoder_path, left_encoder_path,
             kt, _ = stats.kendalltau(gold, pred)
             kts.append(kt)
 
-    print(sum(kts) / len(kts))
-    print(kts.count(1) / len(kts))
+        print(sum(kts) / len(kts))
+        print(kts.count(1) / len(kts))
