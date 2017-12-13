@@ -201,6 +201,8 @@ def train_batch(batch, sent_encoder, left_encoder, right_encoder, classifier):
     rights, reorder = pad_and_pack(rights, 10)
     rights = right_encoder(rights, reorder)
 
+    # TODO: Include left/right lengths as dimensions?
+
     # Cat (left, right, candidate).
     x = torch.stack([
         torch.cat([left, right, candidate])
