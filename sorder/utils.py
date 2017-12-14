@@ -3,6 +3,7 @@
 import numpy as np
 
 import os
+import random
 import torch
 
 from torch.nn.utils.rnn import pack_padded_sequence
@@ -80,3 +81,11 @@ def pad_and_pack(variables, size, *args, **kwargs):
     padded, sizes = zip(*[pad(v, size) for v in variables])
 
     return pack(torch.stack(padded), sizes, *args, **kwargs)
+
+
+def random_subseq(seq, min_size=2):
+    """Slice out a randomly-sized subsequence at a random location.
+    """
+    size = random.randint(min_size, len(seq))
+    left = random.randint(0, len(seq)-size)
+    return seq[left:left+size]

@@ -2,7 +2,7 @@
 
 import click
 
-from sorder.models import regression_context
+from sorder.models import left_right as model
 
 
 @click.group()
@@ -21,7 +21,7 @@ def cli():
 @click.option('--lstm_dim', type=int, default=1000)
 @click.option('--lin_dim', type=int, default=500)
 def train(*args, **kwargs):
-    regression_context.train(*args, **kwargs)
+    model.train(*args, **kwargs)
 
 
 if __name__ == '__main__':

@@ -21,9 +21,9 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torch.autograd import Variable
 from torch.nn import functional as F
 
-from sorder.cuda import CUDA, ftype, itype
+from sorder.utils import checkpoint, pad_and_pack, random_subseq
 from sorder.vectors import LazyVectors
-from sorder.utils import checkpoint, pad_and_pack
+from sorder.cuda import CUDA, ftype, itype
 
 
 vectors = LazyVectors.read()
@@ -172,10 +172,8 @@ def train_batch(batch, sent_encoder, graf_encoder, regressor):
     examples = []
     for ab in batch.unpack_sentences(sents):
 
-        size = random.randint(0, math.floor((len(ab)-2)/2))
-
-        if size:
-            ab = ab[size:-size]
+        # Take random subsequence of sentences.
+        ab = random_subseq(ab)
 
         for i in range(len(ab)):
 
@@ -185,9 +183,8 @@ def train_batch(batch, sent_encoder, graf_encoder, regressor):
 
             length = Variable(torch.FloatTensor([len(ab)])).type(ftype)
 
-            if i == 0: y = 0
-            elif i == len(ab)-1: y = 2
-            else: y = 1
+            # First -> 0, middle -> 1, end -> 2
+            y = 0 if i == 0 else 2 if i == len(ab)-1 else 1
 
             # Graf, sentence, length, position.
             examples.append((graf, ab[i], length, y))
@@ -239,8 +236,6 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
         print(f'\nEpoch {epoch}')
 
         epoch_loss = 0
-        total = 0
-        correct = 0
         for _ in tqdm(range(epoch_size)):
 
             optimizer.zero_grad()
@@ -257,22 +252,4 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             epoch_loss += loss.data[0]
 
-            start = 0
-            for end in range(1, len(y)):
-
-                if y[end].data[0] == 0:
-
-                    pred = y_pred[start:end].data
-
-                    lmax = np.argmax(pred[:,0].tolist())
-                    rmax = np.argmax(pred[:,-1].tolist())
-
-                    if lmax == 0 and rmax == len(pred)-1:
-                        correct += 1
-
-                    total += 1
-
-                    start = end
-
         print(epoch_loss / epoch_size)
-        print(correct / total)
