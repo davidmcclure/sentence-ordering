@@ -148,7 +148,7 @@ class Regressor(nn.Module):
         self.lin3 = nn.Linear(lin_dim, lin_dim)
         self.lin4 = nn.Linear(lin_dim, lin_dim)
         self.lin5 = nn.Linear(lin_dim, lin_dim)
-        self.out = nn.Linear(lin_dim, 3)
+        self.out = nn.Linear(lin_dim, 1)
 
     def forward(self, x):
         y = F.relu(self.lin1(x))
@@ -156,7 +156,7 @@ class Regressor(nn.Module):
         y = F.relu(self.lin3(y))
         y = F.relu(self.lin4(y))
         y = F.relu(self.lin5(y))
-        y = F.log_softmax(self.out(y))
+        y = self.out(y)
         return y.squeeze()
 
 
@@ -176,42 +176,43 @@ def train_batch(batch, sent_encoder, graf_encoder, regressor):
         size = random.randint(2, len(ab))
         i1 = random.randint(0, len(ab)-size)
         i2 = i1 + size
-        middle = ab[i1:i2]
+        window = ab[i1:i2]
 
         # Left and right sentences.
-        zeros = Variable(ab[0].data.clone().zero_())
-        lsent = ab[i1-1] if i1 else zeros
-        rsent = ab[i2] if i2 < len(ab)-1 else zeros
+        # zeros = Variable(ab[0].data.clone().zero_())
+        # lsent = ab[i1-1] if i1 else zeros
+        # rsent = ab[i2] if i2 < len(ab)-1 else zeros
 
-        for i in range(len(middle)):
+        for i in range(len(window)):
 
-            length = Variable(torch.FloatTensor([len(middle)])).type(ftype)
+            perm = torch.randperm(len(window)).type(itype)
 
-            sentence = torch.cat([middle[i], lsent, rsent, length])
+            # Shuffle window, cat with sentence.
+            shuffled_window = torch.cat([
+                window[i].unsqueeze(0),
+                window[perm],
+            ])
 
-            # Shuffle middle.
-            perm = torch.randperm(len(middle)).type(itype)
-            context = torch.cat([middle[i].unsqueeze(0), middle[perm]])
+            # size = Variable(torch.FloatTensor([len(window)])).type(ftype)
 
-            # First -> 0, middle -> 1, end -> 2
-            y = 0 if i == 0 else 2 if i == len(middle)-1 else 1
+            y = i / (len(window)-1)
 
             # Graf, sentence, length, position.
-            examples.append((sentence, context, y))
+            examples.append((shuffled_window, window[i], y))
 
-    sentences, contexts, positions = zip(*examples)
+    windows, sents, ys = zip(*examples)
 
     # Encode contexts.
-    contexts, reorder = pad_and_pack(contexts, 10)
-    contexts = graf_encoder(contexts, reorder)
+    windows, reorder = pad_and_pack(windows, 10)
+    windows = graf_encoder(windows, reorder)
 
-    # <sentence, context>
+    # Stack [window, sentence].
     x = torch.stack([
-        torch.cat([sentence, context])
-        for sentence, context in zip(sentences, contexts)
+        torch.cat([window, sent])
+        for window, sent in zip(windows, sents)
     ])
 
-    y = Variable(torch.LongTensor(positions)).type(itype)
+    y = Variable(torch.FloatTensor(ys)).type(ftype)
 
     return y, regressor(x)
 
@@ -224,7 +225,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     sent_encoder = Encoder(300, lstm_dim)
     graf_encoder = Encoder(2*lstm_dim, lstm_dim)
-    regressor = Regressor(8*lstm_dim+1, lin_dim)
+    regressor = Regressor(4*lstm_dim, lin_dim)
 
     params = (
         list(sent_encoder.parameters()) +
@@ -234,7 +235,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     optimizer = torch.optim.Adam(params, lr=lr)
 
-    loss_func = nn.NLLLoss()
+    loss_func = nn.L1Loss()
 
     if CUDA:
         sent_encoder = sent_encoder.cuda()
@@ -263,27 +264,27 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             epoch_loss += loss.data[0]
 
-            # Check selection accuracy.
-            start = 0
-            for end in range(1, len(y)):
+            # # Check selection accuracy.
+            # start = 0
+            # for end in range(1, len(y)):
 
-                if y[end].data[0] == 0:
+                # if y[end].data[0] == 0:
 
-                    pred = y_pred[start:end].data
+                    # pred = y_pred[start:end].data
 
-                    lmax = np.argmax(pred[:,0].tolist())
-                    rmax = np.argmax(pred[:,-1].tolist())
+                    # lmax = np.argmax(pred[:,0].tolist())
+                    # rmax = np.argmax(pred[:,-1].tolist())
 
-                    # If we'd make a correct selection.
-                    if (
-                        (lmax > rmax and lmax == 0) or
-                        (rmax > lmax and rmax == len(pred)-1)
-                    ):
-                        correct += 1
+                    # # If we'd make a correct selection.
+                    # if (
+                        # (lmax > rmax and lmax == 0) or
+                        # (rmax > lmax and rmax == len(pred)-1)
+                    # ):
+                        # correct += 1
 
-                    total += 1
+                    # total += 1
 
-                    start = end
+                    # start = end
 
         print(epoch_loss / epoch_size)
-        print(correct / total)
+        # print(correct / total)
