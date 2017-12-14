@@ -264,8 +264,8 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
                     pred = y_pred[start:end].data
 
-                    lmax = np.argmax(pred[:,0])
-                    rmax = np.argmax(pred[:,-1])
+                    lmax = np.argmax(pred[:,0].tolist())
+                    rmax = np.argmax(pred[:,-1].tolist())
 
                     if lmax == 0 and rmax == len(pred)-1:
                         correct += 1
