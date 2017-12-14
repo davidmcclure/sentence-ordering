@@ -255,17 +255,17 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
             epoch_loss += loss.data[0]
 
             start = 0
-            for ab in batch.abstracts:
+            for end in range(1, len(y)):
 
-                end = start + len(ab.sentences)
+                if y[end] == 0:
 
-                pred = np.argsort(y_pred[start:end].data.tolist())
-                gold = range(len(ab.sentences))
+                    pred = np.argsort(y_pred[start:end].data.tolist())
+                    gold = range(end-start)
 
-                kt, _ = stats.kendalltau(gold, pred)
-                epoch_kts.append(kt)
+                    kt, _ = stats.kendalltau(gold, pred)
+                    epoch_kts.append(kt)
 
-                start = end
+                    start = end
 
         # checkpoint(model_path, 'sent_encoder', sent_encoder, epoch)
         # checkpoint(model_path, 'left_encoder', left_encoder, epoch)
