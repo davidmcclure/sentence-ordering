@@ -235,7 +235,8 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
         print(f'\nEpoch {epoch}')
 
-        epoch_loss = 0
+        epoch_loss, correct, total = 0, 0, 0
+
         for _ in tqdm(range(epoch_size)):
 
             optimizer.zero_grad()
@@ -252,4 +253,27 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             epoch_loss += loss.data[0]
 
+            # Check selection accuracy.
+            start = 0
+            for end in range(1, len(y)):
+
+                if y[end].data[0] == 0:
+
+                    pred = y_pred[start:end].data
+
+                    lmax = np.argmax(pred[:,0].tolist())
+                    rmax = np.argmax(pred[:,-1].tolist())
+
+                    # If we'd make a correct selection.
+                    if (
+                        (lmax > rmax and lmax == 0) or
+                        (rmax > lmax and rmax == len(pred)-1)
+                    ):
+                        correct += 1
+
+                    total += 1
+
+                    start = end
+
         print(epoch_loss / epoch_size)
+        print(correct / total)
