@@ -148,7 +148,7 @@ class Regressor(nn.Module):
         self.lin3 = nn.Linear(lin_dim, lin_dim)
         self.lin4 = nn.Linear(lin_dim, lin_dim)
         self.lin5 = nn.Linear(lin_dim, lin_dim)
-        self.out = nn.Linear(lin_dim, 1)
+        self.out = nn.Linear(lin_dim, 3)
 
     def forward(self, x):
         y = F.relu(self.lin1(x))
@@ -156,7 +156,7 @@ class Regressor(nn.Module):
         y = F.relu(self.lin3(y))
         y = F.relu(self.lin4(y))
         y = F.relu(self.lin5(y))
-        y = self.out(y)
+        y = F.log_softmax(self.out(y))
         return y.squeeze()
 
 
@@ -185,8 +185,9 @@ def train_batch(batch, sent_encoder, graf_encoder, regressor):
 
             length = Variable(torch.FloatTensor([len(ab)])).type(ftype)
 
-            y = i / (len(ab)-1)
-            if y not in (0, 1): y = 0.5
+            if i == 0: y = 0
+            elif i == len(ab)-1: y = 2
+            else: y = 1
 
             # Graf, sentence, length, position.
             examples.append((graf, ab[i], length, y))
@@ -203,7 +204,7 @@ def train_batch(batch, sent_encoder, graf_encoder, regressor):
         for graf, sentence, length in zip(grafs, sentences, lengths)
     ])
 
-    y = Variable(torch.FloatTensor(positions)).type(ftype)
+    y = Variable(torch.LongTensor(positions)).type(itype)
 
     return y, regressor(x)
 
@@ -226,7 +227,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     optimizer = torch.optim.Adam(params, lr=lr)
 
-    loss_func = nn.L1Loss()
+    loss_func = nn.NLLLoss()
 
     if CUDA:
         sent_encoder = sent_encoder.cuda()
@@ -256,20 +257,20 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             epoch_loss += loss.data[0]
 
-            start = 0
-            for end in range(1, len(y)):
+            # start = 0
+            # for end in range(1, len(y)):
 
-                if y[end].data[0] == 0:
+                # if y[end].data[0] == 0:
 
-                    pred = np.array(y_pred[start:end].data.tolist())
-                    print(y[start:end], pred)
+                    # pred = np.array(y_pred[start:end].data.tolist())
+                    # print(y[start:end], pred)
 
-                    if pred.min() == pred[0] and pred.max() == pred[-1]:
-                        correct += 1
+                    # if pred.min() == pred[0] and pred.max() == pred[-1]:
+                        # correct += 1
 
-                    total += 1
+                    # total += 1
 
-                    start = end
+                    # start = end
 
         print(epoch_loss / epoch_size)
-        print(correct / total)
+        # print(correct / total)
