@@ -24,5 +24,18 @@ def train(*args, **kwargs):
     first_next.train(*args, **kwargs)
 
 
+@cli.command()
+@click.argument('test_path', type=click.Path())
+@click.argument('sent_encoder_path', type=click.Path())
+@click.argument('left_encoder_path', type=click.Path())
+@click.argument('right_encoder_path', type=click.Path())
+@click.argument('classifier_path', type=click.Path())
+@click.option('--test_skim', type=int, default=10000)
+@click.option('--map_source', default='cpu')
+@click.option('--map_target', default='cpu')
+def predict(*args, **kwargs):
+    first_next.predict(*args, **kwargs)
+
+
 if __name__ == '__main__':
     cli()

@@ -46,6 +46,7 @@ def read_abstracts(path, maxlen):
 @attr.s
 class Sentence:
 
+    position = attr.ib()
     tokens = attr.ib()
 
     def tensor(self, dim=300):
@@ -75,8 +76,8 @@ class Abstract:
         json = ujson.loads(line.strip())
 
         return cls([
-            Sentence(s['token'])
-            for s in json['sentences']
+            Sentence(i, s['token'])
+            for i, s in enumerate(json['sentences'])
         ])
 
 
@@ -105,6 +106,12 @@ class Batch:
             yield encoded[start:end]
             start = end
 
+    def shuffle(self):
+        """Shuffle sentences in all abstracts.
+        """
+        for ab in self.abstracts:
+            random.shuffle(ab.sentences)
+
 
 class Corpus:
 
@@ -122,6 +129,12 @@ class Corpus:
         """Query random batch.
         """
         return Batch(random.sample(self.abstracts, size))
+
+    def batches(self, size):
+        """Iterate all batches.
+        """
+        for abstracts in chunked_iter(self.abstracts, size):
+            yield Batch(abstracts)
 
 
 class Encoder(nn.Module):
@@ -275,3 +288,140 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
         print(epoch_loss / epoch_size)
         print(epoch_correct / epoch_total)
+
+
+def greedy_order(sents, left_encoder, right_encoder, classifier):
+    """Order greedy.
+    """
+    order = []
+
+    while len(order) < len(sents):
+
+        # Left sentences.
+        if len(order) == 0:
+            left = Variable(torch.zeros(1, sents.data.shape[1])).type(ftype)
+
+        else:
+            left = sents[torch.LongTensor(order).type(itype)]
+
+        # Right sentences.
+        right_idx = [i for i in range(len(sents)) if i not in order]
+        candidates = sents[torch.LongTensor(right_idx).type(itype)]
+
+        # Encode left.
+        left, reorder = pad_and_pack([left], 10)
+        left = left_encoder(left, reorder)
+
+        # Encode right.
+        right, reorder = pad_and_pack([candidates], 10)
+        right = right_encoder(right, reorder)
+
+        # Cat (left, right, candidate).
+        x = torch.stack([
+            torch.cat([left[0], right[0], candidate])
+            for candidate in candidates
+        ])
+
+        pred = right_idx.pop(np.argmax(classifier(x).data.tolist()))
+        order.append(pred)
+
+    return order
+
+
+def beam_search(sents, left_encoder, right_encoder, classifier, beam_size=64):
+    """Beam search ordering.
+    """
+    # Left, right, score.
+    beam = [[[], range(len(sents)), 0]]
+
+    for _ in range(len(sents)):
+
+        new_beam = []
+        examples = []
+
+        for lidx, ridx, score in beam:
+            for r in ridx:
+
+                new_lidx = lidx + [r]
+                new_ridx = [i for i in ridx if i != r]
+
+                new_beam.append([new_lidx, new_ridx, score])
+
+                # Left sentences.
+                if len(lidx) == 0:
+                    left = torch.zeros(1, sents.data.shape[1])
+                    left = Variable(left).type(ftype)
+
+                else:
+                    left = sents[torch.LongTensor(lidx).type(itype)]
+
+                # Right sentences.
+                right = sents[torch.LongTensor(ridx).type(itype)]
+
+                examples.append((left, right, sents[r]))
+
+        lefts, rights, candidates = zip(*examples)
+
+        # Encode lefts.
+        lefts, reorder = pad_and_pack(lefts, 10)
+        lefts = left_encoder(lefts, reorder)
+
+        # Encode rights.
+        rights, reorder = pad_and_pack(rights, 10)
+        rights = right_encoder(rights, reorder)
+
+        # Cat (left, right, candidate).
+        x = torch.stack([
+            torch.cat([left, right, candidate])
+            for left, right, candidate in zip(lefts, rights, candidates)
+        ])
+
+        preds = classifier(x)
+
+        # Update scores.
+        for i in range(len(preds)):
+            new_beam[i][2] += preds[i].data[0]
+
+        # Sort by score.
+        new_beam = sorted(new_beam, key=lambda x: x[2], reverse=True)
+
+        # Keep N highest scoring paths.
+        beam = new_beam[:beam_size]
+
+    return beam[0][0]
+
+
+def predict(test_path, sent_encoder_path, left_encoder_path,
+    right_encoder_path, classifier_path, test_skim, map_source, map_target):
+    """Predict order.
+    """
+    test = Corpus(test_path, test_skim)
+
+    dmap = {map_source: map_target}
+
+    sent_encoder = torch.load(sent_encoder_path, dmap)
+    left_encoder = torch.load(left_encoder_path, dmap)
+    right_encoder = torch.load(right_encoder_path, dmap)
+    classifier = torch.load(classifier_path, dmap)
+
+    kts = []
+    for batch in tqdm(test.batches(10)):
+
+        batch.shuffle()
+
+        # Encode sentences.
+        x, reorder = batch.packed_sentence_tensor()
+        encoded = sent_encoder(x, reorder)
+
+        unpacked = batch.unpack_sentences(encoded)
+
+        for ab, sents in zip(batch.abstracts, unpacked):
+
+            pred = beam_search(sents, left_encoder, right_encoder, classifier)
+            gold = np.argsort([s.position for s in ab.sentences])
+
+            kt, _ = stats.kendalltau(gold, pred)
+            kts.append(kt)
+
+        print(sum(kts) / len(kts))
+        print(kts.count(1) / len(kts))
