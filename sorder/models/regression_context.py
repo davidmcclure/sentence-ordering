@@ -236,8 +236,9 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
         print(f'\nEpoch {epoch}')
 
-        epoch_loss = 0
         epoch_kts = []
+        total = 0
+        correct = 0
         for _ in tqdm(range(epoch_size)):
 
             optimizer.zero_grad()
@@ -257,21 +258,16 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
             start = 0
             for end in range(1, len(y)):
 
-                if y[end] == 0:
+                if y[end].data[0] == 0:
 
-                    pred = np.argsort(y_pred[start:end].data.tolist())
-                    gold = range(end-start)
+                    pred = np.array(y_pred[start:end].data.tolist())
 
-                    kt, _ = stats.kendalltau(gold, pred)
-                    epoch_kts.append(kt)
+                    if pred.min() == pred[0] and pred.max() == pred[-1]:
+                        correct += 1
+
+                    total += 1
 
                     start = end
 
-        # checkpoint(model_path, 'sent_encoder', sent_encoder, epoch)
-        # checkpoint(model_path, 'left_encoder', left_encoder, epoch)
-        # checkpoint(model_path, 'right_encoder', right_encoder, epoch)
-        # checkpoint(model_path, 'classifier', classifier, epoch)
-
         print(epoch_loss / epoch_size)
-        print(sum(epoch_kts) / len(epoch_kts))
-        print(epoch_kts.count(1) / len(epoch_kts))
+        print(correct / total)
