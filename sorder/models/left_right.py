@@ -172,14 +172,22 @@ def train_batch(batch, sent_encoder, graf_encoder, regressor):
     examples = []
     for ab in batch.unpack_sentences(sents):
 
-        # Take random subsequence of sentences.
-        ab = random_subseq(ab)
+        # Random middle window.
+        size = random.randint(2, len(ab))
+        i1 = random.randint(0, len(ab)-size)
+        i2 = i1 + size
+        middle = ab[i1:i2]
+
+        # Left and right sentences.
+        zeros = Variable(ab[0].data.clone().zero_())
+        lsent = ab[i1-1] if i1 else zeros
+        rsent = ab[i2] if i2 < len(ab)-1 else zeros
 
         for i in range(len(ab)):
 
             # Graf = sentence + context.
-            perm = torch.randperm(len(ab)).type(itype)
-            graf = torch.cat([ab[i].unsqueeze(0), ab[perm]])
+            perm = torch.randperm(len(middle)).type(itype)
+            middle = torch.cat([middle[i].unsqueeze(0), middle[perm]])
 
             length = Variable(torch.FloatTensor([len(ab)])).type(ftype)
 
@@ -187,18 +195,18 @@ def train_batch(batch, sent_encoder, graf_encoder, regressor):
             y = 0 if i == 0 else 2 if i == len(ab)-1 else 1
 
             # Graf, sentence, length, position.
-            examples.append((graf, ab[i], length, y))
+            examples.append((lsent, middle, rsent, ab[i], length, y))
 
-    grafs, sentences, lengths, positions = zip(*examples)
+    lsents, middles, rsents, sents, lengths, positions = zip(*examples)
 
     # Encode grafs.
-    grafs, reorder = pad_and_pack(grafs, 10)
-    grafs = graf_encoder(grafs, reorder)
+    middles, reorder = pad_and_pack(middles, 10)
+    middles = graf_encoder(middles, reorder)
 
     # <graf, sentence, length>
     x = torch.stack([
-        torch.cat([graf, sentence, length])
-        for graf, sentence, length in zip(grafs, sentences, lengths)
+        torch.cat([lsent, middle, rsent, sent, length])
+        for lsent, middle, rsent, sent, length in zip(lsents, middles, rsents, sents, lengths)
     ])
 
     y = Variable(torch.LongTensor(positions)).type(itype)
@@ -214,7 +222,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     sent_encoder = Encoder(300, lstm_dim)
     graf_encoder = Encoder(2*lstm_dim, lstm_dim)
-    regressor = Regressor(4*lstm_dim+1, lin_dim)
+    regressor = Regressor(8*lstm_dim+1, lin_dim)
 
     params = (
         list(sent_encoder.parameters()) +
