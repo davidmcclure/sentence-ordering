@@ -236,7 +236,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
         print(f'\nEpoch {epoch}')
 
-        epoch_kts = []
+        epoch_loss = 0
         total = 0
         correct = 0
         for _ in tqdm(range(epoch_size)):
@@ -260,7 +260,8 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
                 if y[end].data[0] == 0:
 
-                    pred = np.array(y_pred[start:end].data.tolist())
+                    pred = np.argsort(y_pred[start:end].data.tolist())
+                    print(pred)
 
                     if pred.min() == pred[0] and pred.max() == pred[-1]:
                         correct += 1
