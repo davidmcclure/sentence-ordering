@@ -179,26 +179,25 @@ def train_batch(batch, sent_encoder, graf_encoder, regressor):
         window = ab[i1:i2]
 
         # Left and right sentences.
-        # zeros = Variable(ab[0].data.clone().zero_())
-        # lsent = ab[i1-1] if i1 else zeros
-        # rsent = ab[i2] if i2 < len(ab)-1 else zeros
+        zeros = Variable(ab[0].data.clone().zero_())
+        lsent = ab[i1-1] if i1 else zeros
+        rsent = ab[i2] if i2 < len(ab)-1 else zeros
 
         for i in range(len(window)):
 
+            # Shuffle window.
             perm = torch.randperm(len(window)).type(itype)
+            shuffled_window = window[perm]
 
-            # Shuffle window, cat with sentence.
-            shuffled_window = torch.cat([
-                window[i].unsqueeze(0),
-                window[perm],
-            ])
+            # Left, right, size, sentence.
+            size = Variable(torch.FloatTensor([len(window)])).type(ftype)
+            sent = torch.cat([lsent, rsent, size, window[i]])
 
-            # size = Variable(torch.FloatTensor([len(window)])).type(ftype)
-
+            # 0 <-> 1
             y = i / (len(window)-1)
 
             # Graf, sentence, length, position.
-            examples.append((shuffled_window, window[i], y))
+            examples.append((shuffled_window, sent, y))
 
     windows, sents, ys = zip(*examples)
 
@@ -225,7 +224,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     sent_encoder = Encoder(300, lstm_dim)
     graf_encoder = Encoder(2*lstm_dim, lstm_dim)
-    regressor = Regressor(4*lstm_dim, lin_dim)
+    regressor = Regressor(8*lstm_dim+1, lin_dim)
 
     params = (
         list(sent_encoder.parameters()) +
