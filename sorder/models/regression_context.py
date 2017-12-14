@@ -173,20 +173,22 @@ def train_batch(batch, sent_encoder, graf_encoder, regressor):
     for ab in batch.unpack_sentences(sents):
 
         size = random.randint(0, math.floor((len(ab)-2)/2))
-        crop = ab[size:-size]
 
-        for i in range(len(crop)):
+        if size:
+            ab = ab[size:-size]
+
+        for i in range(len(ab)):
 
             # Graf = sentence + context.
-            perm = torch.randperm(len(crop)).type(itype)
-            graf = torch.cat([crop[i].unsqueeze(0), crop[perm]])
+            perm = torch.randperm(len(ab)).type(itype)
+            graf = torch.cat([crop[i].unsqueeze(0), ab[perm]])
 
-            length = Variable(torch.FloatTensor([len(crop)])).type(ftype)
+            length = Variable(torch.FloatTensor([len(ab)])).type(ftype)
 
             y = i / (len(ab)-1)
 
             # Graf, sentence, length, position.
-            examples.append((graf, crop[i], length, y))
+            examples.append((graf, ab[i], length, y))
 
     grafs, sentences, lengths, positions = zip(*examples)
 
