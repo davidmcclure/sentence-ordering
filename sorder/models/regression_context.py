@@ -257,20 +257,22 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             epoch_loss += loss.data[0]
 
-            # start = 0
-            # for end in range(1, len(y)):
+            start = 0
+            for end in range(1, len(y)):
 
-                # if y[end].data[0] == 0:
+                if y[end].data[0] == 0:
 
-                    # pred = np.array(y_pred[start:end].data.tolist())
-                    # print(y[start:end], pred)
+                    pred = y_pred[start:end].data
 
-                    # if pred.min() == pred[0] and pred.max() == pred[-1]:
-                        # correct += 1
+                    lmax = np.argmax(pred[:,0])
+                    rmax = np.argmax(pred[:,-1])
 
-                    # total += 1
+                    if lmax == 0 and rmax == len(pred)-1:
+                        correct += 1
 
-                    # start = end
+                    total += 1
+
+                    start = end
 
         print(epoch_loss / epoch_size)
-        # print(correct / total)
+        print(correct / total)
