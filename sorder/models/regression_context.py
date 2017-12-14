@@ -186,6 +186,7 @@ def train_batch(batch, sent_encoder, graf_encoder, regressor):
             length = Variable(torch.FloatTensor([len(ab)])).type(ftype)
 
             y = i / (len(ab)-1)
+            if y not in (0, 1): y = 0.5
 
             # Graf, sentence, length, position.
             examples.append((graf, ab[i], length, y))
@@ -260,8 +261,8 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
                 if y[end].data[0] == 0:
 
-                    pred = np.argsort(y_pred[start:end].data.tolist())
-                    print(pred)
+                    pred = np.array(y_pred[start:end].data.tolist())
+                    print(y[start:end], pred)
 
                     if pred.min() == pred[0] and pred.max() == pred[-1]:
                         correct += 1
