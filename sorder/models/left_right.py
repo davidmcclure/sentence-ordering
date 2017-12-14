@@ -183,30 +183,33 @@ def train_batch(batch, sent_encoder, graf_encoder, regressor):
         lsent = ab[i1-1] if i1 else zeros
         rsent = ab[i2] if i2 < len(ab)-1 else zeros
 
-        for i in range(len(ab)):
+        for i in range(len(middle)):
 
-            # Graf = sentence + context.
+            # Shuffle middle.
             perm = torch.randperm(len(middle)).type(itype)
-            middle = torch.cat([middle[i].unsqueeze(0), middle[perm]])
+            context = middle[perm]
 
-            length = Variable(torch.FloatTensor([len(ab)])).type(ftype)
+            # Include sentence.
+            context = torch.cat([middle[i].unsqueeze(0), context])
+
+            length = Variable(torch.FloatTensor([len(middle)])).type(ftype)
 
             # First -> 0, middle -> 1, end -> 2
-            y = 0 if i == 0 else 2 if i == len(ab)-1 else 1
+            y = 0 if i == 0 else 2 if i == len(middle)-1 else 1
 
             # Graf, sentence, length, position.
-            examples.append((lsent, middle, rsent, ab[i], length, y))
+            examples.append((lsent, context, rsent, middle[i], length, y))
 
-    lsents, middles, rsents, sents, lengths, positions = zip(*examples)
+    lsents, contexts, rsents, sents, lengths, positions = zip(*examples)
 
     # Encode grafs.
-    middles, reorder = pad_and_pack(middles, 10)
-    middles = graf_encoder(middles, reorder)
+    contexts, reorder = pad_and_pack(contexts, 10)
+    contexts = graf_encoder(contexts, reorder)
 
     # <graf, sentence, length>
     x = torch.stack([
-        torch.cat([lsent, middle, rsent, sent, length])
-        for lsent, middle, rsent, sent, length in zip(lsents, middles, rsents, sents, lengths)
+        torch.cat([lsent, context, rsent, sent, length])
+        for lsent, context, rsent, sent, length in zip(lsents, contexts, rsents, sents, lengths)
     ])
 
     y = Variable(torch.LongTensor(positions)).type(itype)
