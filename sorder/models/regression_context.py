@@ -181,7 +181,7 @@ def train_batch(batch, sent_encoder, graf_encoder, regressor):
 
             # Graf = sentence + context.
             perm = torch.randperm(len(ab)).type(itype)
-            graf = torch.cat([crop[i].unsqueeze(0), ab[perm]])
+            graf = torch.cat([ab[i].unsqueeze(0), ab[perm]])
 
             length = Variable(torch.FloatTensor([len(ab)])).type(ftype)
 
