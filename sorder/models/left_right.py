@@ -133,13 +133,13 @@ class Encoder(nn.Module):
             bidirectional=True)
 
     def forward(self, x, reorder):
-        _, (hn, cn) = self.lstm(x)
+        _, (hn, _) = self.lstm(x)
         # Cat forward + backward hidden layers.
         out = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
         return out[reorder]
 
 
-class Regressor(nn.Module):
+class Classifier(nn.Module):
 
     def __init__(self, input_dim, lin_dim):
         super().__init__()
@@ -148,7 +148,7 @@ class Regressor(nn.Module):
         self.lin3 = nn.Linear(lin_dim, lin_dim)
         self.lin4 = nn.Linear(lin_dim, lin_dim)
         self.lin5 = nn.Linear(lin_dim, lin_dim)
-        self.out = nn.Linear(lin_dim, 1)
+        self.out = nn.Linear(lin_dim, 2)
 
     def forward(self, x):
         y = F.relu(self.lin1(x))
@@ -156,64 +156,60 @@ class Regressor(nn.Module):
         y = F.relu(self.lin3(y))
         y = F.relu(self.lin4(y))
         y = F.relu(self.lin5(y))
-        y = self.out(y)
+        y = F.log_softmax(self.out(y))
         return y.squeeze()
 
 
-def train_batch(batch, sent_encoder, graf_encoder, regressor):
+def train_batch(batch, s_encoder, r_encoder, classifier):
     """Train the batch.
     """
     x, reorder = batch.packed_sentence_tensor()
 
     # Encode sentences.
-    sents = sent_encoder(x, reorder)
+    sents = s_encoder(x, reorder)
 
     # Generate x / y pairs.
     examples = []
     for ab in batch.unpack_sentences(sents):
+        for i in range(len(ab)-1):
 
-        # Random middle window.
-        size = random.randint(2, len(ab))
-        i1 = random.randint(0, len(ab)-size)
-        i2 = i1 + size
-        window = ab[i1:i2]
+            right = ab[i:]
 
-        # Left and right sentences.
-        zeros = Variable(ab[0].data.clone().zero_())
-        lsent = ab[i1-1] if i1 else zeros
-        rsent = ab[i2] if i2 < len(ab)-1 else zeros
+            # Previous sentence (zeros if first).
+            prev_sent = (
+                Variable(torch.zeros(ab.data.shape[1])).type(ftype)
+                if i == 0 else ab[i-1]
+            )
 
-        for i in range(len(window)):
+            # Shuffle right.
+            perm = torch.randperm(len(right)).type(itype)
+            shuffled_right = right[perm]
 
-            # Shuffle window.
-            perm = torch.randperm(len(window)).type(itype)
-            shuffled_window = window[perm]
+            first = right[0]
+            other = random.choice(right[1:])
 
-            # Left, right, size, sentence.
-            size = Variable(torch.FloatTensor([len(window)])).type(ftype)
-            sent = torch.cat([lsent, rsent, size, window[i]])
+            # Previous -> candidate.
+            first = torch.cat([prev_sent, first])
+            other = torch.cat([prev_sent, other])
 
-            # 0 <-> 1
-            y = i / (len(window)-1)
+            # First / not-first.
+            examples.append((first, shuffled_right, 0))
+            examples.append((other, shuffled_right, 1))
 
-            # Graf, sentence, length, position.
-            examples.append((shuffled_window, sent, y))
+    sents, rights, ys = zip(*examples)
 
-    windows, sents, ys = zip(*examples)
+    # Encode rights.
+    rights, reorder = pad_and_pack(rights, 10)
+    rights = r_encoder(rights, reorder)
 
-    # Encode contexts.
-    windows, reorder = pad_and_pack(windows, 10)
-    windows = graf_encoder(windows, reorder)
+    # <sent, right>
+    x = zip(sents, rights)
+    x = list(map(torch.cat, x))
+    x = torch.stack(x)
 
-    # Stack [window, sentence].
-    x = torch.stack([
-        torch.cat([window, sent])
-        for window, sent in zip(windows, sents)
-    ])
+    y = Variable(torch.LongTensor(ys)).type(itype)
 
-    y = Variable(torch.FloatTensor(ys)).type(ftype)
-
-    return y, regressor(x)
+    return classifier(x), y
 
 
 def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
@@ -222,24 +218,24 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     """
     train = Corpus(train_path, train_skim)
 
-    sent_encoder = Encoder(300, lstm_dim)
-    graf_encoder = Encoder(2*lstm_dim, lstm_dim)
-    regressor = Regressor(8*lstm_dim+1, lin_dim)
+    s_encoder = Encoder(300, lstm_dim)
+    r_encoder = Encoder(2*lstm_dim, lstm_dim)
+    classifier = Classifier(6*lstm_dim, lin_dim)
 
     params = (
-        list(sent_encoder.parameters()) +
-        list(graf_encoder.parameters()) +
-        list(regressor.parameters())
+        list(s_encoder.parameters()) +
+        list(r_encoder.parameters()) +
+        list(classifier.parameters())
     )
 
     optimizer = torch.optim.Adam(params, lr=lr)
 
-    loss_func = nn.L1Loss()
+    loss_func = nn.NLLLoss()
 
     if CUDA:
-        sent_encoder = sent_encoder.cuda()
-        graf_encoder = graf_encoder.cuda()
-        regressor = regressor.cuda()
+        s_encoder = s_encoder.cuda()
+        r_encoder = r_encoder.cuda()
+        classifier = classifier.cuda()
 
     for epoch in range(epochs):
 
@@ -253,8 +249,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             batch = train.random_batch(batch_size)
 
-            y, y_pred = train_batch(batch, sent_encoder, \
-                    graf_encoder, regressor)
+            y_pred, y = train_batch(batch, s_encoder, r_encoder, classifier)
 
             loss = loss_func(y_pred, y)
             loss.backward()
@@ -263,30 +258,13 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             epoch_loss += loss.data[0]
 
-            # Check selection accuracy.
-            start = 0
-            for end in range(1, len(y)):
+            # EVAL
 
-                if y[end].data[0] == 0:
+            matches = np.argmax(y_pred.data.tolist(), 1) == \
+                np.array(y.data.tolist())
 
-                    pred = y_pred[start:end].data
-
-                    max_idx = np.argmax(pred)
-                    min_idx = np.argmin(pred)
-
-                    max_d = pred[max_idx] - 0.5
-                    min_d = 0.5 - pred[min_idx]
-
-                    # If we'd make a correct selection.
-                    if (
-                        max_d > min_d and max_idx == len(pred)-1 or
-                        min_d > max_d and min_idx == 0
-                    ):
-                        correct += 1
-
-                    total += 1
-
-                    start = end
+            correct += matches.sum()
+            total += len(matches)
 
         print(epoch_loss / epoch_size)
         print(correct / total)
