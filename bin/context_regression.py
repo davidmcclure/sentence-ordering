@@ -2,7 +2,7 @@
 
 import click
 
-from sorder.models import left_right as model
+from sorder.models import context_regression as model
 
 
 @click.group()
@@ -18,7 +18,7 @@ def cli():
 @click.option('--epochs', type=int, default=1000)
 @click.option('--epoch_size', type=int, default=100)
 @click.option('--batch_size', type=int, default=20)
-@click.option('--lstm_dim', type=int, default=1000)
+@click.option('--lstm_dim', type=int, default=500)
 @click.option('--lin_dim', type=int, default=500)
 def train(*args, **kwargs):
     model.train(*args, **kwargs)
