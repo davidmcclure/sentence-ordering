@@ -190,10 +190,7 @@ def train_batch(batch, s_encoder, r_encoder, classifier):
             perm = torch.randperm(len(right)).type(itype)
             shuffled_right = right[perm]
 
-            # 0 <-> 1
-            y = i / (len(right)-1)
-
-            examples.append((sent, shuffled_right, y))
+            examples.append((sent, shuffled_right, i))
 
     sents, rights, ys = zip(*examples)
 
@@ -229,7 +226,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     optimizer = torch.optim.Adam(params, lr=lr)
 
-    loss_func = nn.L1Loss()
+    loss_func = nn.MSELoss()
 
     if CUDA:
         s_encoder = s_encoder.cuda()
