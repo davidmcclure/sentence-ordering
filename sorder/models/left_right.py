@@ -182,17 +182,19 @@ def train_batch(batch, s_encoder, r_encoder, classifier):
             if split == 0 else ab[split-1]
         )
 
+        # Right-window size.
+        size = Variable(torch.FloatTensor([len(right)])).type(ftype)
+
         for i in range(len(right)):
 
             # Previous -> candidate.
-            # sent = torch.cat([prev_sent, right[i]])
-            sent = right[i]
+            sent = torch.cat([right[i], prev_sent, size])
 
             # Shuffle right.
             perm = torch.randperm(len(right)).type(itype)
             shuffled_right = right[perm]
 
-            y = i if i == 0 else i + 10
+            y = i if i == 0 else i + 50
 
             examples.append((sent, shuffled_right, y))
 
@@ -220,7 +222,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     s_encoder = Encoder(300, lstm_dim)
     r_encoder = Encoder(2*lstm_dim, lstm_dim)
-    classifier = Classifier(6*lstm_dim, lin_dim)
+    classifier = Classifier(4*lstm_dim, lin_dim)
 
     params = (
         list(s_encoder.parameters()) +
@@ -271,9 +273,6 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
                         correct += 1
 
                     total += 1
-
-                    if random.random() < 0.001:
-                        print(y_pred[start:end])
 
                     start = end
 
