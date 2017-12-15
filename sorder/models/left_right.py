@@ -230,7 +230,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     s_encoder = Encoder(300, lstm_dim)
     l_encoder = Encoder(2*lstm_dim, lstm_dim)
     r_encoder = Encoder(2*lstm_dim, lstm_dim)
-    classifier = Classifier(4*lstm_dim, lin_dim)
+    classifier = Classifier(8*lstm_dim+1, lin_dim)
 
     params = (
         list(s_encoder.parameters()) +
@@ -261,7 +261,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             batch = train.random_batch(batch_size)
 
-            y_pred, y = train_batch(batch, l_encoder, s_encoder, \
+            y_pred, y = train_batch(batch, s_encoder, l_encoder, \
                     r_encoder, classifier)
 
             loss = loss_func(y_pred, y)
