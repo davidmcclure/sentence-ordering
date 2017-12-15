@@ -195,31 +195,6 @@ def train_batch(batch, s_encoder, r_encoder, classifier):
             other = torch.cat([prev_sent, other])
             examples.append((other, shuffled_right, 1))
 
-        # for i in range(len(ab)-1):
-
-            # right = ab[i:]
-
-            # # Previous sentence (zeros if first).
-            # prev_sent = (
-                # Variable(torch.zeros(ab.data.shape[1])).type(ftype)
-                # if i == 0 else ab[i-1]
-            # )
-
-            # # Shuffle right.
-            # perm = torch.randperm(len(right)).type(itype)
-            # shuffled_right = right[perm]
-
-            # first = right[0]
-            # other = random.choice(right[1:])
-
-            # # Previous -> candidate.
-            # first = torch.cat([prev_sent, first])
-            # other = torch.cat([prev_sent, other])
-
-            # # First / not-first.
-            # examples.append((first, shuffled_right, 0))
-            # examples.append((other, shuffled_right, 1))
-
     sents, rights, ys = zip(*examples)
 
     # Encode rights.
@@ -254,7 +229,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     optimizer = torch.optim.Adam(params, lr=lr)
 
-    loss_func = nn.NLLLoss()
+    loss_func = nn.NLLLoss(weight=torch.FloatTensor([10, 1]))
 
     if CUDA:
         s_encoder = s_encoder.cuda()
