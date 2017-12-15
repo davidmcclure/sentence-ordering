@@ -24,5 +24,17 @@ def train(*args, **kwargs):
     model.train(*args, **kwargs)
 
 
+@cli.command()
+@click.argument('test_path', type=click.Path())
+@click.argument('s_encoder_path', type=click.Path())
+@click.argument('r_encoder_path', type=click.Path())
+@click.argument('regressor_path', type=click.Path())
+@click.option('--test_skim', type=int, default=10000)
+@click.option('--map_source', default='cpu')
+@click.option('--map_target', default='cpu')
+def predict(*args, **kwargs):
+    model.predict(*args, **kwargs)
+
+
 if __name__ == '__main__':
     cli()

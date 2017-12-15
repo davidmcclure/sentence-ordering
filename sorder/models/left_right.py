@@ -47,6 +47,7 @@ def read_abstracts(path, maxlen):
 @attr.s
 class Sentence:
 
+    position = attr.ib()
     tokens = attr.ib()
 
     def tensor(self, dim=300):
@@ -76,8 +77,8 @@ class Abstract:
         json = ujson.loads(line.strip())
 
         return cls([
-            Sentence(s['token'])
-            for s in json['sentences']
+            Sentence(i, s['token'])
+            for i, s in enumerate(json['sentences'])
         ])
 
 
@@ -106,6 +107,12 @@ class Batch:
             yield encoded[start:end]
             start = end
 
+    def shuffle(self):
+        """Shuffle sentences in all abstracts.
+        """
+        for ab in self.abstracts:
+            random.shuffle(ab.sentences)
+
 
 class Corpus:
 
@@ -123,6 +130,12 @@ class Corpus:
         """Query random batch.
         """
         return Batch(random.sample(self.abstracts, size))
+
+    def batches(self, size):
+        """Iterate all batches.
+        """
+        for abstracts in chunked_iter(self.abstracts, size):
+            yield Batch(abstracts)
 
 
 class Encoder(nn.Module):
@@ -278,3 +291,52 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
         print(epoch_loss / epoch_size)
         print(correct / total)
+
+
+def greedy_order(sents, r_encoder, regressor):
+    return range(len(sents))
+
+
+def predict(test_path, s_encoder_path, r_encoder_path, regressor_path,
+    test_skim, map_source, map_target):
+    """Predict order.
+    """
+    test = Corpus(test_path, test_skim)
+
+    s_encoder = torch.load(
+        s_encoder_path,
+        map_location={map_source: map_target},
+    )
+
+    r_encoder = torch.load(
+        r_encoder_path,
+        map_location={map_source: map_target},
+    )
+
+    regressor = torch.load(
+        regressor_path,
+        map_location={map_source: map_target},
+    )
+
+    kts = []
+    for batch in tqdm(test.batches(10)):
+
+        batch.shuffle()
+
+        # Encode sentence batch.
+        sent_batch, reorder = batch.packed_sentence_tensor()
+        sent_batch = s_encoder(sent_batch, reorder)
+
+        # Re-group by abstract.
+        ab_sents = batch.unpack_sentences(sent_batch)
+
+        for ab, sents in tqdm(zip(batch.abstracts, ab_sents)):
+
+            gold = np.argsort([s.position for s in ab.sentences])
+            pred = greedy_order(sents, r_encoder, regressor)
+
+            kt, _ = stats.kendalltau(gold, pred)
+            kts.append(kt)
+
+    print(sum(kts) / len(kts))
+    print(kts.count(1) / len(kts))
