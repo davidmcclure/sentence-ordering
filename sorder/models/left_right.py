@@ -274,13 +274,13 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
                     max_idx = np.argmax(pred)
                     min_idx = np.argmin(pred)
 
-                    max_d = 1-pred[max_idx]
-                    min_d = pred[min_idx]
+                    max_d = pred[max_idx] - 0.5
+                    min_d = 0.5 - pred[min_idx]
 
                     # If we'd make a correct selection.
                     if (
-                        max_d < min_d and max_idx == len(pred)-1 or
-                        min_d < max_d and min_idx == 0
+                        max_d > min_d and max_idx == len(pred)-1 or
+                        min_d > max_d and min_idx == 0
                     ):
                         correct += 1
 
