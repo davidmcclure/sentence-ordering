@@ -175,16 +175,16 @@ def train_batch(batch, s_encoder, r_encoder, regressor):
         split = random.randint(0, len(ab)-2)
         right = ab[split:]
 
-        # Previous sentence (zeros if first).
-        prev_sent = (
-            Variable(torch.zeros(ab.data.shape[1])).type(ftype)
-            if split == 0 else ab[split-1]
-        )
+        zeros = Variable(torch.zeros(ab.data.shape[1])).type(ftype)
+
+        # Previous two sentences.
+        minus1 = ab[split-1] if split > 0 else zeros
+        minus2 = ab[split-2] if split > 1 else zeros
 
         for i in range(len(right)):
 
             # Previous -> candidate.
-            sent = torch.cat([prev_sent, right[i]])
+            sent = torch.cat([minus1, minus2, right[i]])
 
             # Shuffle right.
             perm = torch.randperm(len(right)).type(itype)
@@ -218,7 +218,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     s_encoder = Encoder(300, lstm_dim)
     r_encoder = Encoder(2*lstm_dim, lstm_dim)
-    regressor = Regressor(6*lstm_dim, lin_dim)
+    regressor = Regressor(8*lstm_dim, lin_dim)
 
     params = (
         list(s_encoder.parameters()) +
