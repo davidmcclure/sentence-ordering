@@ -330,6 +330,53 @@ def greedy_order(sents, r_encoder, regressor):
     return order
 
 
+def beam_search(sents, r_encoder, regressor, beam_size=1000):
+    """Beam search order.
+    """
+    beam = [([], 0)]
+
+    for _ in range(len(sents)):
+
+        new_beam = []
+
+        for lidx, score in beam:
+
+            ridx = [i for i in range(len(sents)) if i not in lidx]
+
+            candidates = sents[torch.LongTensor(ridx).type(itype)]
+
+            # Encode right context.
+            right, reorder = pad_and_pack([candidates], 10)
+            right = r_encoder(right, reorder)
+
+            # Previous sentence (zeros if first).
+            prev_sent = (
+                sents[lidx[-1]] if lidx else
+                Variable(torch.zeros(sents.data.shape[1])).type(ftype)
+            )
+
+            x = torch.stack([
+                torch.cat([prev_sent, candidate, right[0]])
+                for candidate in candidates
+            ])
+
+            preds = regressor(x).data.tolist()
+
+            pred_idx = np.argmin(preds)
+
+            new_lidx = lidx + [ridx[pred_idx]]
+
+            new_score = score + preds[pred_idx]
+
+            new_beam.append((new_lidx, new_score))
+
+        new_beam = sorted(new_beam, key=lambda x: x[1])
+
+        beam = new_beam[:beam_size]
+
+    return beam[0][0]
+
+
 def predict(test_path, s_encoder_path, r_encoder_path, regressor_path,
     test_skim, map_source, map_target):
     """Predict order.
@@ -366,10 +413,10 @@ def predict(test_path, s_encoder_path, r_encoder_path, regressor_path,
         for ab, sents in zip(batch.abstracts, ab_sents):
 
             gold = np.argsort([s.position for s in ab.sentences])
-            pred = greedy_order(sents, r_encoder, regressor)
+            pred = beam_search(sents, r_encoder, regressor)
 
             kt, _ = stats.kendalltau(gold, pred)
             kts.append(kt)
 
-    print(sum(kts) / len(kts))
-    print(kts.count(1) / len(kts))
+        print(sum(kts) / len(kts))
+        print(kts.count(1) / len(kts))
