@@ -190,7 +190,9 @@ def train_batch(batch, s_encoder, r_encoder, classifier):
             perm = torch.randperm(len(right)).type(itype)
             shuffled_right = right[perm]
 
-            examples.append((sent, shuffled_right, i))
+            y = math.pow(i+2, i+2)
+
+            examples.append((sent, shuffled_right, y))
 
     sents, rights, ys = zip(*examples)
 
