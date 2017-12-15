@@ -185,13 +185,14 @@ def train_batch(batch, s_encoder, r_encoder, classifier):
         for i in range(len(right)):
 
             # Previous -> candidate.
-            sent = torch.cat([prev_sent, right[i]])
+            # sent = torch.cat([prev_sent, right[i]])
+            sent = right[i]
 
             # Shuffle right.
             perm = torch.randperm(len(right)).type(itype)
             shuffled_right = right[perm]
 
-            y = i if i == 0 else i + 50
+            y = i if i == 0 else i + 10
 
             examples.append((sent, shuffled_right, y))
 
@@ -271,7 +272,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
                     total += 1
 
-                    if random.random() < 0.01:
+                    if random.random() < 0.001:
                         print(y_pred[start:end])
 
                     start = end
