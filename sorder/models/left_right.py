@@ -294,7 +294,40 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
 
 def greedy_order(sents, r_encoder, regressor):
-    return range(len(sents))
+    """Predict order greedy.
+    """
+    order = []
+
+    while len(order) < len(sents):
+
+        right_idx = [
+            i for i in range(len(sents))
+            if i not in order
+        ]
+
+        candidates = sents[torch.LongTensor(right_idx).type(itype)]
+
+        # Encode right context.
+        right, reorder = pad_and_pack([candidates], 10)
+        right = r_encoder(right, reorder)
+
+        # Previous sentence (zeros if first).
+        prev_sent = (
+            sents[order[-1]] if order else
+            Variable(torch.zeros(sents.data.shape[1])).type(ftype)
+        )
+
+        x = torch.stack([
+            torch.cat([prev_sent, candidate, right[0]])
+            for candidate in candidates
+        ])
+
+        preds = regressor(x)
+
+        pred_min = right_idx.pop(np.argmin(preds.data.tolist()))
+        order.append(pred_min)
+
+    return order
 
 
 def predict(test_path, s_encoder_path, r_encoder_path, regressor_path,
@@ -330,7 +363,7 @@ def predict(test_path, s_encoder_path, r_encoder_path, regressor_path,
         # Re-group by abstract.
         ab_sents = batch.unpack_sentences(sent_batch)
 
-        for ab, sents in tqdm(zip(batch.abstracts, ab_sents)):
+        for ab, sents in zip(batch.abstracts, ab_sents):
 
             gold = np.argsort([s.position for s in ab.sentences])
             pred = greedy_order(sents, r_encoder, regressor)
