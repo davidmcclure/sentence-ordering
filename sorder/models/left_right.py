@@ -172,6 +172,7 @@ def train_batch(batch, s_encoder, r_encoder, classifier):
     examples = []
     for ab in batch.unpack_sentences(sents):
 
+        # Random split.
         split = random.randint(0, len(ab)-2)
         right = ab[split:]
 
@@ -190,7 +191,7 @@ def train_batch(batch, s_encoder, r_encoder, classifier):
             perm = torch.randperm(len(right)).type(itype)
             shuffled_right = right[perm]
 
-            y = i if i == 0 else i + 10
+            y = i if i == 0 else i + 50
 
             examples.append((sent, shuffled_right, y))
 
@@ -264,7 +265,6 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
                 if y[end].data[0] == 0:
 
                     pred = y_pred[start:end].data.tolist()
-                    print(y[start:end], y_pred[start:end])
 
                     if np.argmin(pred) == 0:
                         correct += 1
@@ -272,6 +272,9 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
                     total += 1
 
                     start = end
+
+                    if random.random() < 0.01:
+                        print(y_pred[start:end])
 
         print(epoch_loss / epoch_size)
         print(correct / total)
