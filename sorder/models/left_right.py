@@ -271,10 +271,10 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
                     total += 1
 
-                    start = end
-
                     if random.random() < 0.01:
                         print(y_pred[start:end])
+
+                    start = end
 
         print(epoch_loss / epoch_size)
         print(correct / total)
