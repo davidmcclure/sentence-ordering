@@ -283,14 +283,20 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
             epoch_loss += loss.data[0]
 
             # EVAL
-            if random.random() < 0.01:
-                print(y[:10], y_pred[:10].exp())
 
-            # matches = np.argmax(y_pred.data.tolist(), 1) == \
-                # np.array(y.data.tolist())
+            start = 0
+            for end in range(1, len(y)):
 
-            # correct += matches.sum()
-            # total += len(matches)
+                if y[end].data[0] == 0:
+
+                    preds = y_pred[start:end][:,0].data.tolist()
+
+                    if np.argmax(preds) == 0:
+                        correct += 1
+
+                    total += 1
+
+                    start = end
 
         print(epoch_loss / epoch_size)
-        # print(correct / total)
+        print(correct / total)
