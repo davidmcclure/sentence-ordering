@@ -139,7 +139,7 @@ class Encoder(nn.Module):
         return out[reorder]
 
 
-class Classifier(nn.Module):
+class Regressor(nn.Module):
 
     def __init__(self, input_dim, lin_dim):
         super().__init__()
@@ -160,7 +160,7 @@ class Classifier(nn.Module):
         return y.squeeze()
 
 
-def train_batch(batch, s_encoder, r_encoder, classifier):
+def train_batch(batch, s_encoder, r_encoder, regressor):
     """Train the batch.
     """
     x, reorder = batch.packed_sentence_tensor()
@@ -190,7 +190,7 @@ def train_batch(batch, s_encoder, r_encoder, classifier):
             perm = torch.randperm(len(right)).type(itype)
             shuffled_right = right[perm]
 
-            y = i if i == 0 else i + 10
+            y = i if i == 0 else i + 50
 
             examples.append((sent, shuffled_right, y))
 
@@ -207,7 +207,7 @@ def train_batch(batch, s_encoder, r_encoder, classifier):
 
     y = Variable(torch.FloatTensor(ys)).type(ftype)
 
-    return classifier(x), y
+    return regressor(x), y
 
 
 def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
@@ -218,12 +218,12 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     s_encoder = Encoder(300, lstm_dim)
     r_encoder = Encoder(2*lstm_dim, lstm_dim)
-    classifier = Classifier(6*lstm_dim, lin_dim)
+    regressor = Regressor(6*lstm_dim, lin_dim)
 
     params = (
         list(s_encoder.parameters()) +
         list(r_encoder.parameters()) +
-        list(classifier.parameters())
+        list(regressor.parameters())
     )
 
     optimizer = torch.optim.Adam(params, lr=lr)
@@ -233,7 +233,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     if CUDA:
         s_encoder = s_encoder.cuda()
         r_encoder = r_encoder.cuda()
-        classifier = classifier.cuda()
+        regressor = regressor.cuda()
 
     for epoch in range(epochs):
 
@@ -247,7 +247,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             batch = train.random_batch(batch_size)
 
-            y_pred, y = train_batch(batch, s_encoder, r_encoder, classifier)
+            y_pred, y = train_batch(batch, s_encoder, r_encoder, regressor)
 
             loss = loss_func(y_pred, y)
             loss.backward()
@@ -264,7 +264,6 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
                 if y[end].data[0] == 0:
 
                     pred = y_pred[start:end].data.tolist()
-                    print(y[start:end], y_pred[start:end])
 
                     if np.argmin(pred) == 0:
                         correct += 1
@@ -272,6 +271,10 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
                     total += 1
 
                     start = end
+
+        checkpoint(model_path, 's_encoder', s_encoder, epoch)
+        checkpoint(model_path, 'r_encoder', r_encoder, epoch)
+        checkpoint(model_path, 'regressor', regressor, epoch)
 
         print(epoch_loss / epoch_size)
         print(correct / total)
