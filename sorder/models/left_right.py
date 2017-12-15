@@ -261,7 +261,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
             start = 0
             for end in range(1, len(y)):
 
-                if y[end].data[0] == 0:
+                if y[end].data[0] == 4:
 
                     pred = y_pred[start:end].data.tolist()
 
