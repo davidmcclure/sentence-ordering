@@ -148,7 +148,7 @@ class Classifier(nn.Module):
         self.lin3 = nn.Linear(lin_dim, lin_dim)
         self.lin4 = nn.Linear(lin_dim, lin_dim)
         self.lin5 = nn.Linear(lin_dim, lin_dim)
-        self.out = nn.Linear(lin_dim, 2)
+        self.out = nn.Linear(lin_dim, 1)
 
     def forward(self, x):
         y = F.relu(self.lin1(x))
@@ -156,7 +156,7 @@ class Classifier(nn.Module):
         y = F.relu(self.lin3(y))
         y = F.relu(self.lin4(y))
         y = F.relu(self.lin5(y))
-        y = F.log_softmax(self.out(y))
+        y = self.out(y)
         return y.squeeze()
 
 
@@ -175,50 +175,25 @@ def train_batch(batch, s_encoder, r_encoder, classifier):
         split = random.randint(0, len(ab)-2)
         right = ab[split:]
 
-        # Shuffle right.
-        perm = torch.randperm(len(right)).type(itype)
-        shuffled_right = right[perm]
-
         # Previous sentence (zeros if first).
         prev_sent = (
             Variable(torch.zeros(ab.data.shape[1])).type(ftype)
             if split == 0 else ab[split-1]
         )
 
-        first = torch.cat([prev_sent, right[0]])
+        for i in range(len(right)):
 
-        # First.
-        examples.append((first, shuffled_right, 0))
+            # Previous -> candidate.
+            sent = torch.cat([prev_sent, right[i]])
 
-        # Not first.
-        for other in right[1:]:
-            other = torch.cat([prev_sent, other])
-            examples.append((other, shuffled_right, 1))
+            # Shuffle right.
+            perm = torch.randperm(len(right)).type(itype)
+            shuffled_right = right[perm]
 
-        # for i in range(len(ab)-1):
+            # 0 <-> 1
+            y = i / (len(right)-1)
 
-            # right = ab[i:]
-
-            # # Previous sentence (zeros if first).
-            # prev_sent = (
-                # Variable(torch.zeros(ab.data.shape[1])).type(ftype)
-                # if i == 0 else ab[i-1]
-            # )
-
-            # # Shuffle right.
-            # perm = torch.randperm(len(right)).type(itype)
-            # shuffled_right = right[perm]
-
-            # first = right[0]
-            # other = random.choice(right[1:])
-
-            # # Previous -> candidate.
-            # first = torch.cat([prev_sent, first])
-            # other = torch.cat([prev_sent, other])
-
-            # # First / not-first.
-            # examples.append((first, shuffled_right, 0))
-            # examples.append((other, shuffled_right, 1))
+            examples.append((sent, shuffled_right, y))
 
     sents, rights, ys = zip(*examples)
 
@@ -231,7 +206,7 @@ def train_batch(batch, s_encoder, r_encoder, classifier):
     x = list(map(torch.cat, x))
     x = torch.stack(x)
 
-    y = Variable(torch.LongTensor(ys)).type(itype)
+    y = Variable(torch.FloatTensor(ys)).type(ftype)
 
     return classifier(x), y
 
@@ -254,7 +229,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     optimizer = torch.optim.Adam(params, lr=lr)
 
-    loss_func = nn.NLLLoss()
+    loss_func = nn.L1Loss()
 
     if CUDA:
         s_encoder = s_encoder.cuda()
@@ -289,9 +264,9 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
                 if y[end].data[0] == 0:
 
-                    preds = y_pred[start:end][:,0].data.tolist()
+                    pred = y_pred[start:end].data.tolist()
 
-                    if np.argmax(preds) == 0:
+                    if np.argmin(pred) == 0:
                         correct += 1
 
                     total += 1
