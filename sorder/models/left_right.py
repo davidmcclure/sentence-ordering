@@ -191,30 +191,33 @@ def train_batch(batch, s_encoder, l_encoder, r_encoder, classifier):
         for i in range(len(right)):
 
             # Sentence, previous, size.
-            sent = torch.cat([right[i], prev_sent, size])
+            sent = torch.cat([right[i], prev_sent, left.mean(0), right.mean(0), size])
 
             # Shuffle right.
-            perm = torch.randperm(len(right)).type(itype)
-            shuffled_right = right[perm]
+            # perm = torch.randperm(len(right)).type(itype)
+            # shuffled_right = right[perm]
 
             y = i if i == 0 else i + 50
 
-            examples.append((sent, left, shuffled_right, y))
+            # examples.append((sent, left, shuffled_right, y))
+            examples.append((sent, y))
 
-    sents, lefts, rights, ys = zip(*examples)
+    # sents, lefts, rights, ys = zip(*examples)
+    sents, ys = zip(*examples)
 
-    # Encode lefts.
-    lefts, reorder = pad_and_pack(lefts, 10)
-    lefts = r_encoder(lefts, reorder)
+    # # Encode lefts.
+    # lefts, reorder = pad_and_pack(lefts, 10)
+    # lefts = r_encoder(lefts, reorder)
 
-    # Encode rights.
-    rights, reorder = pad_and_pack(rights, 10)
-    rights = r_encoder(rights, reorder)
+    # # Encode rights.
+    # rights, reorder = pad_and_pack(rights, 10)
+    # rights = r_encoder(rights, reorder)
 
-    # <sent, left, right>
-    x = zip(sents, lefts, rights)
-    x = list(map(torch.cat, x))
-    x = torch.stack(x)
+    # # <sent, left, right>
+    # x = zip(sents, lefts, rights)
+    # x = list(map(torch.cat, x))
+    x = torch.stack(sents)
+    print(x)
 
     y = Variable(torch.FloatTensor(ys)).type(ftype)
 
@@ -234,8 +237,8 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     params = (
         list(s_encoder.parameters()) +
-        list(l_encoder.parameters()) +
-        list(r_encoder.parameters()) +
+        # list(l_encoder.parameters()) +
+        # list(r_encoder.parameters()) +
         list(classifier.parameters())
     )
 
