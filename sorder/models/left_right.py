@@ -190,7 +190,7 @@ def train_batch(batch, s_encoder, r_encoder, classifier):
             perm = torch.randperm(len(right)).type(itype)
             shuffled_right = right[perm]
 
-            y = math.pow(i+2, i+2)
+            y = i if i == 0 else i + 10
 
             examples.append((sent, shuffled_right, y))
 
@@ -261,9 +261,10 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
             start = 0
             for end in range(1, len(y)):
 
-                if y[end].data[0] == 4:
+                if y[end].data[0] == 0:
 
                     pred = y_pred[start:end].data.tolist()
+                    print(y[start:end], y_pred[start:end])
 
                     if np.argmin(pred) == 0:
                         correct += 1
