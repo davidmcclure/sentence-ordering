@@ -263,27 +263,30 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             epoch_loss += loss.data[0]
 
-            # # Check selection accuracy.
-            # start = 0
-            # for end in range(1, len(y)):
+            # Check selection accuracy.
+            start = 0
+            for end in range(1, len(y)):
 
-                # if y[end].data[0] == 0:
+                if y[end].data[0] == 0:
 
-                    # pred = y_pred[start:end].data
+                    pred = y_pred[start:end].data
 
-                    # lmax = np.argmax(pred[:,0].tolist())
-                    # rmax = np.argmax(pred[:,-1].tolist())
+                    max_idx = np.argmax(pred)
+                    min_idx = np.argmin(pred)
 
-                    # # If we'd make a correct selection.
-                    # if (
-                        # (lmax > rmax and lmax == 0) or
-                        # (rmax > lmax and rmax == len(pred)-1)
-                    # ):
-                        # correct += 1
+                    max_d = 1-pred[max_idx]
+                    min_d = pred[min_idx]
 
-                    # total += 1
+                    # If we'd make a correct selection.
+                    if (
+                        max_d < min_d and max_idx == len(pred)-1 or
+                        min_d < max_d and min_idx == 0
+                    ):
+                        correct += 1
 
-                    # start = end
+                    total += 1
+
+                    start = end
 
         print(epoch_loss / epoch_size)
-        # print(correct / total)
+        print(correct / total)
