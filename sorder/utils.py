@@ -6,6 +6,8 @@ import os
 import random
 import torch
 
+from collections import OrderedDict
+
 from torch.nn.utils.rnn import pack_padded_sequence
 from torch.autograd import Variable
 
@@ -83,9 +85,8 @@ def pad_and_pack(variables, size, *args, **kwargs):
     return pack(torch.stack(padded), sizes, *args, **kwargs)
 
 
-def random_subseq(seq, min_size=2):
-    """Slice out a randomly-sized subsequence at a random location.
+def sort_by_key(d, desc=False):
+    """Sort dictionary by key.
     """
-    size = random.randint(min_size, len(seq))
-    left = random.randint(0, len(seq)-size)
-    return seq[left:left+size]
+    items = sorted(d.items(), key=lambda x: x[0], reverse=desc)
+    return OrderedDict(items)

@@ -65,10 +65,10 @@ class Metrics:
             if gold == pred:
                 perfect[len(gold)] += 1
 
-        return {
+        return sort_by_key({
             slen: perfect.get(slen, 0) / self.len_counts[slen]
             for slen in self.len_counts
-        }
+        })
 
     @cached_property
     def overall_perfect_order_pct(self):
