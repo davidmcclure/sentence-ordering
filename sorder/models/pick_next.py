@@ -154,7 +154,7 @@ class Classifier(nn.Module):
         return y.squeeze()
 
 
-def train_batch(batch, s_encoder, r_encoder, classifier):
+def train_batch(batch, s_encoder, l_encoder, r_encoder, classifier):
     """Train the batch.
     """
     x, reorder = batch.packed_sentence_tensor()
@@ -167,13 +167,16 @@ def train_batch(batch, s_encoder, r_encoder, classifier):
     for ab in batch.unpack_sentences(sents):
         for i in range(len(ab)-1):
 
+            left = (
+                Variable(torch.zeros(1, ab.data.shape[1])).type(ftype)
+                if i == 0 else ab[:i]
+            )
+
             right = ab[i:]
 
-            zeros = Variable(torch.zeros(ab.data.shape[1])).type(ftype)
-
             # Previous 2 sentences.
-            minus1 = ab[i-1] if i > 0 else zeros
-            minus2 = ab[i-2] if i > 1 else zeros
+            # minus1 = left[-1] if i > 0 else zeros
+            # minus2 = left[-2] if i > 1 else zeros
 
             # Shuffle right.
             perm = torch.randperm(len(right)).type(itype)
@@ -183,21 +186,25 @@ def train_batch(batch, s_encoder, r_encoder, classifier):
             other = random.choice(right[1:])
 
             # Prev 2 -> candidate.
-            first = torch.cat([minus1, minus2, first])
-            other = torch.cat([minus1, minus2, other])
+            # first = torch.cat([minus1, minus2, first])
+            # other = torch.cat([minus1, minus2, other])
 
             # First / not-first.
-            examples.append((first, shuffled_right, 0))
-            examples.append((other, shuffled_right, 1))
+            examples.append((first, left, shuffled_right, 0))
+            examples.append((other, left, shuffled_right, 1))
 
-    sents, rights, ys = zip(*examples)
+    sents, lefts, rights, ys = zip(*examples)
 
     # Encode rights.
     rights, reorder = pad_and_pack(rights, 30)
     rights = r_encoder(rights, reorder)
 
-    # <sent, right>
-    x = zip(sents, rights)
+    # Encode lefts.
+    lefts, reorder = pad_and_pack(lefts, 30)
+    lefts = l_encoder(lefts, reorder)
+
+    # <sent, left, right>
+    x = zip(sents, lefts, rights)
     x = list(map(torch.cat, x))
     x = torch.stack(x)
 
@@ -213,11 +220,13 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     train = Corpus(train_path, train_skim)
 
     s_encoder = Encoder(300, lstm_dim)
+    l_encoder = Encoder(2*lstm_dim, lstm_dim)
     r_encoder = Encoder(2*lstm_dim, lstm_dim)
-    classifier = Classifier(8*lstm_dim, lin_dim)
+    classifier = Classifier(6*lstm_dim, lin_dim)
 
     params = (
         list(s_encoder.parameters()) +
+        list(l_encoder.parameters()) +
         list(r_encoder.parameters()) +
         list(classifier.parameters())
     )
@@ -228,6 +237,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     if CUDA:
         s_encoder = s_encoder.cuda()
+        l_encoder = l_encoder.cuda()
         r_encoder = r_encoder.cuda()
         classifier = classifier.cuda()
 
@@ -243,7 +253,8 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             batch = train.random_batch(batch_size)
 
-            y_pred, y = train_batch(batch, s_encoder, r_encoder, classifier)
+            y_pred, y = train_batch(batch, s_encoder, l_encoder,
+                r_encoder, classifier)
 
             loss = loss_func(y_pred, y)
             loss.backward()
