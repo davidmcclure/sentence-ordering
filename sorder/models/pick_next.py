@@ -169,11 +169,11 @@ def train_batch(batch, s_encoder, r_encoder, classifier):
 
             right = ab[i:]
 
-            # Previous sentence (zeros if first).
-            prev_sent = (
-                Variable(torch.zeros(ab.data.shape[1])).type(ftype)
-                if i == 0 else ab[i-1]
-            )
+            zeros = Variable(torch.zeros(ab.data.shape[1])).type(ftype)
+
+            # Previous 2 sentences.
+            minus1 = ab[i-1] if i > 0 else zeros
+            minus2 = ab[i-2] if i > 1 else zeros
 
             # Shuffle right.
             perm = torch.randperm(len(right)).type(itype)
@@ -182,9 +182,9 @@ def train_batch(batch, s_encoder, r_encoder, classifier):
             first = right[0]
             other = random.choice(right[1:])
 
-            # Previous -> candidate.
-            first = torch.cat([prev_sent, first])
-            other = torch.cat([prev_sent, other])
+            # Prev 2 -> candidate.
+            first = torch.cat([minus1, minus2, first])
+            other = torch.cat([minus1, minus2, other])
 
             # First / not-first.
             examples.append((first, shuffled_right, 0))
@@ -214,7 +214,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     s_encoder = Encoder(300, lstm_dim)
     r_encoder = Encoder(2*lstm_dim, lstm_dim)
-    classifier = Classifier(6*lstm_dim, lin_dim)
+    classifier = Classifier(8*lstm_dim, lin_dim)
 
     params = (
         list(s_encoder.parameters()) +
