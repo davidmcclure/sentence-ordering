@@ -5,6 +5,8 @@ import attr
 from collections import defaultdict
 from cached_property import cached_property
 
+from scipy import stats
+
 
 @attr.s
 class Metrics:
@@ -29,7 +31,7 @@ class Metrics:
         """
         return {
             count: sum(kts) / len(kts)
-            for count, kts in self.kts_by_sent_count
+            for count, kts in self.kts_by_sent_count.items()
         }
 
     @cached_property
