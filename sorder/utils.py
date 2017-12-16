@@ -83,10 +83,3 @@ def pad_and_pack(variables, size, *args, **kwargs):
     padded, sizes = zip(*[pad(v, size) for v in variables])
 
     return pack(torch.stack(padded), sizes, *args, **kwargs)
-
-
-def sort_by_key(d, desc=False):
-    """Sort dictionary by key.
-    """
-    items = sorted(d.items(), key=lambda x: x[0], reverse=desc)
-    return OrderedDict(items)
