@@ -34,18 +34,13 @@ def read_abstracts(path, maxlen):
     for path in glob(os.path.join(path, '*.json')):
         with open(path) as fh:
             for line in fh:
-
-                # Parse JSON.
-                abstract = Abstract.from_line(line)
-
-                # Filter by length.
-                if len(abstract.sentences) < maxlen:
-                    yield abstract
+                yield Abstract.from_line(line)
 
 
 @attr.s
 class Sentence:
 
+    position = attr.ib()
     tokens = attr.ib()
 
     def tensor(self, dim=300):
@@ -75,8 +70,8 @@ class Abstract:
         json = ujson.loads(line.strip())
 
         return cls([
-            Sentence(s['token'])
-            for s in json['sentences']
+            Sentence(i, s['token'])
+            for i, s in enumerate(json['sentences'])
         ])
 
 
@@ -108,10 +103,10 @@ class Batch:
 
 class Corpus:
 
-    def __init__(self, path, skim=None, maxlen=10):
+    def __init__(self, path, skim=None):
         """Load abstracts into memory.
         """
-        reader = read_abstracts(path, maxlen)
+        reader = read_abstracts(path)
 
         if skim:
             reader = islice(reader, skim)
@@ -122,6 +117,12 @@ class Corpus:
         """Query random batch.
         """
         return Batch(random.sample(self.abstracts, size))
+
+    def batches(self, size):
+        """Iterate all batches.
+        """
+        for abstracts in chunked_iter(self.abstracts, size):
+            yield Batch(abstracts)
 
 
 class Encoder(nn.Module):
@@ -268,3 +269,81 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
         print(epoch_loss / epoch_size)
         print(sum(kts) / len(kts))
         print(kts.count(1) / len(kts))
+
+
+def regress_sents(ab, graf_encoder, regressor):
+    """Regress sentences, get order.
+    """
+    # Generate x / y pairs.
+    examples = []
+    for i in range(len(ab)):
+
+        # Graf = sentence + context.
+        perm = torch.randperm(len(ab)).type(itype)
+        graf = torch.cat([ab[i].unsqueeze(0), ab[perm]])
+
+        # Paragraph length.
+        size = Variable(torch.FloatTensor([len(ab)])).type(ftype)
+
+        # Graf, sentence, size, position.
+        examples.append((graf, ab[i], size))
+
+    grafs, sents, sizes = zip(*examples)
+
+    # Encode grafs.
+    grafs, reorder = pad_and_pack(grafs, 10)
+    grafs = graf_encoder(grafs, reorder)
+
+    # <graf, sent, size>
+    x = zip(grafs, sents, sizes)
+    x = list(map(torch.cat, x))
+    x = torch.stack(x)
+
+    pred = regressor(x)
+
+    return np.argsort(pred.data.tolist())
+
+
+def predict(test_path, sent_encoder_path, graf_encoder_path, regressor_path,
+    test_skim, map_source, map_target):
+    """Predict order.
+    """
+    test = Corpus(test_path, test_skim)
+
+    sent_encoder = torch.load(
+        sent_encoder_path,
+        map_location={map_source: map_target},
+    )
+
+    graf_encoder = torch.load(
+        graf_encoder_path,
+        map_location={map_source: map_target},
+    )
+
+    regressor = torch.load(
+        regressor_path,
+        map_location={map_source: map_target},
+    )
+
+    kts = []
+    for batch in tqdm(test.batches(100)):
+
+        # batch.shuffle()
+
+        # Encode sentence batch.
+        sent_batch, reorder = batch.packed_sentence_tensor()
+        sent_batch = sent_encoder(sent_batch, reorder)
+
+        # Re-group by abstract.
+        unpacked = batch.unpack_sentences(sent_batch)
+
+        for ab, sents in zip(batch.abstracts, unpacked):
+
+            gold = np.argsort([s.position for s in ab.sentences])
+            pred = regress_sents(sents, graf_encoder, regressor)
+
+            kt, _ = stats.kendalltau(gold, pred)
+            kts.append(kt)
+
+    print(sum(kts) / len(kts))
+    print(kts.count(1) / len(kts))
