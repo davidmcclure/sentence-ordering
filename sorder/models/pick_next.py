@@ -235,7 +235,8 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
         print(f'\nEpoch {epoch}')
 
-        epoch_loss = 0
+        epoch_loss, c, t = 0, 0, 0
+
         for _ in tqdm(range(epoch_size)):
 
             optimizer.zero_grad()
@@ -251,4 +252,15 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             epoch_loss += loss.data[0]
 
+            # EVAL
+
+            matches = (
+                np.argmax(y_pred.data.tolist(), 1) ==
+                np.array(y.data.tolist())
+            )
+
+            c += matches.sum()
+            t += len(matches)
+
         print(epoch_loss / epoch_size)
+        print(c / t)
