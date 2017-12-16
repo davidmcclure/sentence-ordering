@@ -328,8 +328,6 @@ def predict(test_path, sent_encoder_path, graf_encoder_path, regressor_path,
     kts = []
     for batch in tqdm(test.batches(100)):
 
-        # batch.shuffle()
-
         # Encode sentence batch.
         sent_batch, reorder = batch.packed_sentence_tensor()
         sent_batch = sent_encoder(sent_batch, reorder)
