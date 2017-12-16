@@ -8,6 +8,7 @@ import torch
 import attr
 import random
 import ujson
+import math
 
 from tqdm import tqdm
 from itertools import islice
@@ -20,27 +21,21 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torch.autograd import Variable
 from torch.nn import functional as F
 
-from sorder.cuda import CUDA, ftype, itype
-from sorder.vectors import LazyVectors
 from sorder.utils import checkpoint, pad_and_pack
+from sorder.vectors import LazyVectors
+from sorder.cuda import CUDA, ftype, itype
 
 
 vectors = LazyVectors.read()
 
 
-def read_abstracts(path, maxlen):
+def read_abstracts(path):
     """Parse abstract JSON lines.
     """
     for path in glob(os.path.join(path, '*.json')):
         with open(path) as fh:
             for line in fh:
-
-                # Parse JSON.
-                abstract = Abstract.from_line(line)
-
-                # Filter by length.
-                if len(abstract.sentences) < maxlen:
-                    yield abstract
+                yield Abstract.from_line(line)
 
 
 @attr.s
@@ -108,10 +103,10 @@ class Batch:
 
 class Corpus:
 
-    def __init__(self, path, skim=None, maxlen=10):
+    def __init__(self, path, skim=None):
         """Load abstracts into memory.
         """
-        reader = read_abstracts(path, maxlen)
+        reader = read_abstracts(path)
 
         if skim:
             reader = islice(reader, skim)
@@ -132,7 +127,7 @@ class Encoder(nn.Module):
             bidirectional=True)
 
     def forward(self, x, reorder):
-        _, (hn, cn) = self.lstm(x)
+        _, (hn, _) = self.lstm(x)
         # Cat forward + backward hidden layers.
         out = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
         return out[reorder]
@@ -147,7 +142,7 @@ class Classifier(nn.Module):
         self.lin3 = nn.Linear(lin_dim, lin_dim)
         self.lin4 = nn.Linear(lin_dim, lin_dim)
         self.lin5 = nn.Linear(lin_dim, lin_dim)
-        self.out = nn.Linear(lin_dim, 1)
+        self.out = nn.Linear(lin_dim, 2)
 
     def forward(self, x):
         y = F.relu(self.lin1(x))
@@ -155,53 +150,60 @@ class Classifier(nn.Module):
         y = F.relu(self.lin3(y))
         y = F.relu(self.lin4(y))
         y = F.relu(self.lin5(y))
-        y = F.sigmoid(self.out(y))
+        y = F.log_softmax(self.out(y))
         return y.squeeze()
 
 
-def train_batch(batch, sentence_encoder, window_encoder, classifier):
+def train_batch(batch, s_encoder, r_encoder, classifier):
     """Train the batch.
     """
     x, reorder = batch.packed_sentence_tensor()
 
     # Encode sentences.
-    sents = sentence_encoder(x, reorder)
+    sents = s_encoder(x, reorder)
 
-    # Generate positive / negative examples.
+    # Generate x / y pairs.
     examples = []
     for ab in batch.unpack_sentences(sents):
-        for i in range(len(ab)-2):
+        for i in range(len(ab)-1):
 
-            window = ab[i:]
+            right = ab[i:]
 
-            # Shuffle window.
-            perm = torch.randperm(len(window)).type(itype)
-            shuffled_window = window[perm]
+            # Previous sentence (zeros if first).
+            prev_sent = (
+                Variable(torch.zeros(ab.data.shape[1])).type(ftype)
+                if i == 0 else ab[i-1]
+            )
 
-            first = window[0]
-            other = random.choice(window[1:])
+            # Shuffle right.
+            perm = torch.randperm(len(right)).type(itype)
+            shuffled_right = right[perm]
+
+            first = right[0]
+            other = random.choice(right[1:])
+
+            # Previous -> candidate.
+            first = torch.cat([prev_sent, first])
+            other = torch.cat([prev_sent, other])
 
             # First / not-first.
-            examples.append((shuffled_window, first, 1))
-            examples.append((shuffled_window, other, 0))
+            examples.append((first, shuffled_right, 0))
+            examples.append((other, shuffled_right, 1))
 
-    windows, sentences, ys = zip(*examples)
+    sents, rights, ys = zip(*examples)
 
-    # Pad / pack windows.
-    windows, reorder = pad_and_pack(windows, 10)
+    # Encode rights.
+    rights, reorder = pad_and_pack(rights, 30)
+    rights = r_encoder(rights, reorder)
 
-    # Encode windows.
-    windows = window_encoder(windows, reorder)
+    # <sent, right>
+    x = zip(sents, rights)
+    x = list(map(torch.cat, x))
+    x = torch.stack(x)
 
-    # Stack (context, sentence).
-    x = torch.stack([
-        torch.cat([w, s])
-        for w, s in zip(windows, sentences)
-    ])
+    y = Variable(torch.LongTensor(ys)).type(itype)
 
-    y = Variable(torch.FloatTensor(ys)).type(ftype)
-
-    return y, classifier(x)
+    return classifier(x), y
 
 
 def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
@@ -210,23 +212,23 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     """
     train = Corpus(train_path, train_skim)
 
-    sent_encoder = Encoder(300, lstm_dim)
-    window_encoder = Encoder(2*lstm_dim, lstm_dim)
-    classifier = Classifier(4*lstm_dim, lin_dim)
+    s_encoder = Encoder(300, lstm_dim)
+    r_encoder = Encoder(2*lstm_dim, lstm_dim)
+    classifier = Classifier(6*lstm_dim, lin_dim)
 
     params = (
-        list(sent_encoder.parameters()) +
-        list(window_encoder.parameters()) +
+        list(s_encoder.parameters()) +
+        list(r_encoder.parameters()) +
         list(classifier.parameters())
     )
 
     optimizer = torch.optim.Adam(params, lr=lr)
 
-    loss_func = nn.BCELoss()
+    loss_func = nn.NLLLoss()
 
     if CUDA:
-        sent_encoder = sent_encoder.cuda()
-        window_encoder = window_encoder.cuda()
+        s_encoder = s_encoder.cuda()
+        r_encoder = r_encoder.cuda()
         classifier = classifier.cuda()
 
     for epoch in range(epochs):
@@ -234,16 +236,13 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
         print(f'\nEpoch {epoch}')
 
         epoch_loss = 0
-        epoch_correct = 0
-        epoch_total = 0
         for _ in tqdm(range(epoch_size)):
 
             optimizer.zero_grad()
 
             batch = train.random_batch(batch_size)
 
-            y, y_pred = train_batch(batch, sent_encoder, \
-                window_encoder, classifier)
+            y_pred, y = train_batch(batch, s_encoder, r_encoder, classifier)
 
             loss = loss_func(y_pred, y)
             loss.backward()
@@ -251,12 +250,5 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
             optimizer.step()
 
             epoch_loss += loss.data[0]
-            epoch_correct += (y_pred.round() == y).sum().data[0]
-            epoch_total += len(y)
-
-        checkpoint(model_path, 'sent_encoder', sent_encoder, epoch)
-        checkpoint(model_path, 'window_encoder', window_encoder, epoch)
-        checkpoint(model_path, 'classifier', classifier, epoch)
 
         print(epoch_loss / epoch_size)
-        print(epoch_correct / epoch_total)
