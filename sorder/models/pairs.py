@@ -252,12 +252,44 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
         print(c / t)
 
 
-def order_greedy(ab, s_encoder, classifier):
-    return list(range(len(ab)))
+def beam_search(ab, classifier, beam_size=100):
+    """Beam search.
+    """
+    beam = [((i,), 0) for i in range(len(ab))]
 
+    for _ in range(len(ab)-1):
 
-def order_beam_search(ab, s_encoder, classifier, beam_size=100):
-    return list(range(len(ab)))
+        new_beam = []
+
+        # Get new path candidates.
+        for path, score in beam:
+            for i in range(len(ab)):
+                if i not in path:
+                    new_beam.append(((*path, i), score))
+
+        # Get input tensors from final two sents.
+        x = torch.stack([
+            torch.cat([ab[p[-2]], ab[p[-1]]])
+            for p, _ in new_beam
+        ])
+
+        x = x.type(ftype)
+
+        y = classifier(x)
+
+        # Update scores.
+        new_beam = [
+            (path, score + new_score.data[0])
+            for (path, score), new_score in zip(new_beam, y)
+        ]
+
+        # Sort by score.
+        new_beam = sorted(new_beam, key=lambda x: x[1], reverse=True)
+
+        # Keep N highest scoring paths.
+        beam = new_beam[:beam_size]
+
+    return beam[0][0]
 
 
 def predict(test_path, s_encoder_path, classifier_path, gp_path, test_skim,
@@ -292,7 +324,7 @@ def predict(test_path, s_encoder_path, classifier_path, gp_path, test_skim,
 
             gold = [s.position for s in ab.sentences]
 
-            pred = order_greedy(sents, s_encoder, classifier)
+            pred = beam_search(sents, classifier)
             pred = np.argsort(pred).argsort().tolist()
 
             gps.append((gold, pred))
