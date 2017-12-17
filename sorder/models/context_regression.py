@@ -189,7 +189,7 @@ def train_batch(batch, sent_encoder, graf_encoder, regressor):
     grafs, sents, sizes, ys = zip(*examples)
 
     # Encode grafs.
-    grafs, reorder = pad_and_pack(grafs, 10)
+    grafs, reorder = pad_and_pack(grafs, 30)
     grafs = graf_encoder(grafs, reorder)
 
     # <graf, sent, size>
@@ -232,7 +232,6 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
         print(f'\nEpoch {epoch}')
 
         epoch_loss = 0
-        kts = []
         for _ in tqdm(range(epoch_size)):
 
             optimizer.zero_grad()
@@ -267,8 +266,6 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
         checkpoint(model_path, 'regressor', regressor, epoch)
 
         print(epoch_loss / epoch_size)
-        print(sum(kts) / len(kts))
-        print(kts.count(1) / len(kts))
 
 
 def regress_sents(ab, graf_encoder, regressor):
