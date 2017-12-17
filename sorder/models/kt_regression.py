@@ -24,6 +24,7 @@ from torch.nn import functional as F
 from sorder.utils import checkpoint, pad_and_pack
 from sorder.vectors import LazyVectors
 from sorder.cuda import ftype, itype
+from sorder.perms import sample_perms
 
 
 vectors = LazyVectors.read()
@@ -135,9 +136,14 @@ class Encoder(nn.Module):
 
 class Regressor(nn.Module):
 
-    def __init__(self, input_dim, lin_dim):
+    def __init__(self, lstm_dim, lin_dim):
+
         super().__init__()
-        self.lin1 = nn.Linear(input_dim, lin_dim)
+
+        self.lstm = nn.LSTM(lstm_dim, lstm_dim, batch_first=True,
+            bidirectional=True)
+
+        self.lin1 = nn.Linear(lstm_dim*2, lin_dim)
         self.lin2 = nn.Linear(lin_dim, lin_dim)
         self.lin3 = nn.Linear(lin_dim, lin_dim)
         self.lin4 = nn.Linear(lin_dim, lin_dim)
@@ -145,7 +151,13 @@ class Regressor(nn.Module):
         self.out = nn.Linear(lin_dim, 1)
 
     def forward(self, x):
-        y = F.relu(self.lin1(x))
+
+        _, (hn, _) = self.lstm(x)
+
+        # Cat forward + backward hidden layers.
+        y = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
+
+        y = F.relu(self.lin1(y))
         y = F.relu(self.lin2(y))
         y = F.relu(self.lin3(y))
         y = F.relu(self.lin4(y))
@@ -163,10 +175,22 @@ def train_batch(batch, sent_encoder, regressor):
     sents = sent_encoder(x, reorder)
 
     # Generate x / y pairs.
+    x, y = [], []
     for ab in batch.unpack_sentences(sents):
-        pass
 
-    # TODO
+        dist = random.random()
+
+        for perm in sample_perms(len(ab), dist):
+
+            perm = list(map(int, perm.tolist()))
+            perm = torch.LongTensor(perm).type(itype)
+
+            x.append(ab[perm])
+            y.append(dist)
+
+    x, reorder = pad_and_pack(x, 30)
+
+    y = Variable(torch.FloatTensor(y)).type(ftype)
 
     return regressor(x), y
 
@@ -187,7 +211,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     optimizer = torch.optim.Adam(params, lr=lr)
 
-    loss_func = nn.NLLLoss()
+    loss_func = nn.L1Loss()
 
     if torch.cuda.is_available():
         sent_encoder = sent_encoder.cuda()
