@@ -190,23 +190,25 @@ def train_batch(batch, s_encoder, l_encoder, r_encoder, classifier):
             # other = torch.cat([minus1, minus2, other])
 
             # First / not-first.
-            examples.append((first, left, shuffled_right, 0))
-            examples.append((other, left, shuffled_right, 1))
+            # examples.append((first, left, shuffled_right, 0))
+            # examples.append((other, left, shuffled_right, 1))
+            examples.append((first, 0))
+            examples.append((other, 1))
 
-    sents, lefts, rights, ys = zip(*examples)
+    sents, ys = zip(*examples)
 
     # Encode rights.
-    rights, reorder = pad_and_pack(rights, 30)
-    rights = r_encoder(rights, reorder)
+    # rights, reorder = pad_and_pack(rights, 30)
+    # rights = r_encoder(rights, reorder)
 
     # Encode lefts.
-    lefts, reorder = pad_and_pack(lefts, 30)
-    lefts = l_encoder(lefts, reorder)
+    # lefts, reorder = pad_and_pack(lefts, 30)
+    # lefts = l_encoder(lefts, reorder)
 
     # <sent, left, right>
-    x = zip(sents, lefts, rights)
-    x = list(map(torch.cat, x))
-    x = torch.stack(x)
+    # x = zip(sents, lefts, rights)
+    # x = list(map(torch.cat, x))
+    x = torch.stack(sents)
 
     y = Variable(torch.LongTensor(ys)).type(itype)
 
@@ -222,12 +224,12 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     s_encoder = Encoder(300, lstm_dim)
     l_encoder = Encoder(2*lstm_dim, lstm_dim)
     r_encoder = Encoder(2*lstm_dim, lstm_dim)
-    classifier = Classifier(6*lstm_dim, lin_dim)
+    classifier = Classifier(2*lstm_dim, lin_dim)
 
     params = (
         list(s_encoder.parameters()) +
-        list(l_encoder.parameters()) +
-        list(r_encoder.parameters()) +
+        # list(l_encoder.parameters()) +
+        # list(r_encoder.parameters()) +
         list(classifier.parameters())
     )
 
