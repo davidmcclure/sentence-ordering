@@ -274,3 +274,92 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
         print(epoch_loss / epoch_size)
         print(c / t)
+
+
+def order_greedy(ab, r_encoder, classifier):
+    """Order greedy.
+    """
+    order = []
+
+    while len(order) < len(ab):
+
+        i = len(order)
+
+        right_idx = [
+            j for j in range(len(ab))
+            if j not in order
+        ]
+
+        right = sents[torch.LongTensor(right_idx).type(itype)]
+
+        zeros = Variable(torch.zeros(ab.data.shape[1])).type(ftype)
+
+        # Previous 2 sentences.
+        minus1 = ab[i-1] if i > 0 else zeros
+        minus2 = ab[i-2] if i > 1 else zeros
+
+        # Raw position index, 0 <-> 1 ratio.
+        index = Variable(torch.Tensor([i])).type(ftype)
+        ratio = Variable(torch.Tensor([i / (len(ab)-1)])).type(ftype)
+
+        context = torch.cat([minus1, minus2, index, ratio])
+
+        # Candidate sentences.
+        x = torch.stack([
+            torch.cat([sent, context])
+            for sent in right
+        ])
+
+        preds = np.array(classifier(x).data.tolist())
+
+        pred = right_idx.pop(np.argmax(preds[:,0]))
+        order.append(pred)
+
+    return order
+
+
+def predict(test_path, s_encoder_path, r_encoder_path, classifier_path,
+    gp_path, test_skim, map_source, map_target):
+    """Predict order.
+    """
+    test = Corpus(test_path, test_skim)
+
+    s_encoder = torch.load(
+        s_encoder_path,
+        map_location={map_source: map_target},
+    )
+
+    r_encoder = torch.load(
+        r_encoder_path,
+        map_location={map_source: map_target},
+    )
+
+    classifier = torch.load(
+        classifier_path,
+        map_location={map_source: map_target},
+    )
+
+    gps = []
+    for batch in tqdm(test.batches(100)):
+
+        batch.shuffle()
+
+        # Encode sentence batch.
+        sent_batch, reorder = batch.packed_sentence_tensor()
+        sent_batch = s_encoder(sent_batch, reorder)
+
+        # Re-group by abstract.
+        unpacked = batch.unpack_sentences(sent_batch)
+
+        for ab, sents in zip(batch.abstracts, unpacked):
+
+            gold = [s.position for s in ab.sentences]
+
+            # Predict.
+            pred = order_greedy(sents, r_encoder, classifier)
+            pred = np.argsort(pred).tolist()
+
+            gps.append((gold, pred))
+
+    with open(gp_path, 'w') as fh:
+        ujson.dump(gps, fh)
