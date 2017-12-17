@@ -163,6 +163,7 @@ class Regressor(nn.Module):
         y = F.relu(self.lin4(y))
         y = F.relu(self.lin5(y))
         y = self.out(y)
+
         return y.squeeze()
 
 
