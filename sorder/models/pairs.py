@@ -309,7 +309,7 @@ def predict(test_path, s_encoder_path, classifier_path, gp_path, test_skim,
     )
 
     gps = []
-    for batch in tqdm(test.batches(100)):
+    for batch in tqdm(test.batches(1000)):
 
         batch.shuffle()
 
@@ -329,5 +329,5 @@ def predict(test_path, s_encoder_path, classifier_path, gp_path, test_skim,
 
             gps.append((gold, pred))
 
-    with open(gp_path, 'w') as fh:
-        ujson.dump(gps, fh)
+        with open(gp_path, 'w') as fh:
+            ujson.dump(gps, fh)
