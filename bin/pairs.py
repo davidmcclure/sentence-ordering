@@ -28,5 +28,19 @@ def train(*args, **kwargs):
         model.train(*args, **kwargs)
 
 
+@cli.command()
+@click.argument('test_path', type=click.Path())
+@click.argument('s_encoder_path', type=click.Path())
+@click.argument('classifier_path', type=click.Path())
+@click.argument('gp_path', type=click.Path())
+@click.option('--test_skim', type=int, default=10000)
+@click.option('--map_source', default='cuda:1')
+@click.option('--map_target', default='cuda:1')
+@click.option('--gpu', type=int, default=1)
+def predict(*args, **kwargs):
+    with cuda.gpu(kwargs.pop('gpu')):
+        model.predict(*args, **kwargs)
+
+
 if __name__ == '__main__':
     cli()

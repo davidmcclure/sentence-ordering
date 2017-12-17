@@ -41,6 +41,7 @@ def read_abstracts(path):
 @attr.s
 class Sentence:
 
+    position = attr.ib()
     tokens = attr.ib()
 
     def tensor(self, dim=300):
@@ -70,8 +71,8 @@ class Abstract:
         json = ujson.loads(line.strip())
 
         return cls([
-            Sentence(s['token'])
-            for s in json['sentences']
+            Sentence(i, s['token'])
+            for i, s in enumerate(json['sentences'])
         ])
 
 
@@ -100,6 +101,12 @@ class Batch:
             yield encoded[start:end]
             start = end
 
+    def shuffle(self):
+        """Shuffle sentences in all abstracts.
+        """
+        for ab in self.abstracts:
+            random.shuffle(ab.sentences)
+
 
 class Corpus:
 
@@ -117,6 +124,12 @@ class Corpus:
         """Query random batch.
         """
         return Batch(random.sample(self.abstracts, size))
+
+    def batches(self, size):
+        """Iterate all batches.
+        """
+        for abstracts in chunked_iter(self.abstracts, size):
+            yield Batch(abstracts)
 
 
 class Encoder(nn.Module):
@@ -237,3 +250,52 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
         print(epoch_loss / epoch_size)
         print(c / t)
+
+
+def order_greedy(ab, s_encoder, classifier):
+    return list(range(len(ab)))
+
+
+def order_beam_search(ab, s_encoder, classifier, beam_size=100):
+    return list(range(len(ab)))
+
+
+def predict(test_path, s_encoder_path, classifier_path, gp_path, test_skim,
+    map_source, map_target):
+    """Predict order.
+    """
+    test = Corpus(test_path, test_skim)
+
+    s_encoder = torch.load(
+        s_encoder_path,
+        map_location={map_source: map_target},
+    )
+
+    classifier = torch.load(
+        classifier_path,
+        map_location={map_source: map_target},
+    )
+
+    gps = []
+    for batch in tqdm(test.batches(100)):
+
+        batch.shuffle()
+
+        # Encode sentence batch.
+        sent_batch, reorder = batch.packed_sentence_tensor()
+        sent_batch = s_encoder(sent_batch, reorder)
+
+        # Re-group by abstract.
+        unpacked = batch.unpack_sentences(sent_batch)
+
+        for ab, sents in zip(batch.abstracts, unpacked):
+
+            gold = [s.position for s in ab.sentences]
+
+            pred = order_greedy(sents, s_encoder, classifier)
+            pred = np.argsort(pred).argsort().tolist()
+
+            gps.append((gold, pred))
+
+    with open(gp_path, 'w') as fh:
+        ujson.dump(gps, fh)
