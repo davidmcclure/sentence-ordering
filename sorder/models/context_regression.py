@@ -20,7 +20,7 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torch.autograd import Variable
 from torch.nn import functional as F
 
-from sorder.cuda import CUDA, ftype, itype
+from sorder.cuda import ftype, itype
 from sorder.vectors import LazyVectors
 from sorder.utils import checkpoint, pad_and_pack
 
@@ -222,7 +222,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     loss_func = nn.MSELoss()
 
-    if CUDA:
+    if torch.cuda.is_available():
         sent_encoder = sent_encoder.cuda()
         graf_encoder = graf_encoder.cuda()
         regressor = regressor.cuda()

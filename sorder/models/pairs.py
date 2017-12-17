@@ -23,7 +23,7 @@ from torch.nn import functional as F
 
 from sorder.utils import checkpoint, pad_and_pack
 from sorder.vectors import LazyVectors
-from sorder.cuda import CUDA, ftype, itype
+from sorder.cuda import ftype, itype
 
 
 vectors = LazyVectors.read()
@@ -197,7 +197,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     loss_func = nn.NLLLoss()
 
-    if CUDA:
+    if torch.cuda.is_available():
         s_encoder = s_encoder.cuda()
         classifier = classifier.cuda()
 
