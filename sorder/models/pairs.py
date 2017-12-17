@@ -309,7 +309,7 @@ def predict(test_path, s_encoder_path, classifier_path, gp_path, test_skim,
     )
 
     gps = []
-    for batch in tqdm(test.batches(100)):
+    for i, batch in enumerate(tqdm(test.batches(100))):
 
         batch.shuffle()
 
@@ -327,9 +327,12 @@ def predict(test_path, s_encoder_path, classifier_path, gp_path, test_skim,
             pred = beam_search(sents, classifier)
             pred = np.argsort(pred).tolist()
 
-            print(gold, pred)
-
             gps.append((gold, pred))
+
+        # TODO|dev
+        if i % 100 == 0:
+            with open(gp_path, 'w') as fh:
+                ujson.dump(gps, fh)
 
     with open(gp_path, 'w') as fh:
         ujson.dump(gps, fh)
