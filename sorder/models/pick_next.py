@@ -386,5 +386,10 @@ def predict(test_path, s_encoder_path, r_encoder_path, classifier_path,
 
             gps.append((gold, pred))
 
+        # TODO|dev
+        if i % 100 == 0:
+            with open(gp_path, 'w') as fh:
+                ujson.dump(gps, fh)
+
     with open(gp_path, 'w') as fh:
         ujson.dump(gps, fh)
