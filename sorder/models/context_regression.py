@@ -28,7 +28,7 @@ from sorder.utils import checkpoint, pad_and_pack
 vectors = LazyVectors.read()
 
 
-def read_abstracts(path, maxlen):
+def read_abstracts(path):
     """Parse abstract JSON lines.
     """
     for path in glob(os.path.join(path, '*.json')):
