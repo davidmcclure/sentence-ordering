@@ -41,6 +41,7 @@ def read_abstracts(path):
 @attr.s
 class Sentence:
 
+    position = attr.ib()
     tokens = attr.ib()
 
     def tensor(self, dim=300):
@@ -70,8 +71,8 @@ class Abstract:
         json = ujson.loads(line.strip())
 
         return cls([
-            Sentence(s['token'])
-            for s in json['sentences']
+            Sentence(i, s['token'])
+            for i, s in enumerate(json['sentences'])
         ])
 
 
@@ -100,6 +101,12 @@ class Batch:
             yield encoded[start:end]
             start = end
 
+    def shuffle(self):
+        """Shuffle sentences in all abstracts.
+        """
+        for ab in self.abstracts:
+            random.shuffle(ab.sentences)
+
 
 class Corpus:
 
@@ -117,6 +124,12 @@ class Corpus:
         """Query random batch.
         """
         return Batch(random.sample(self.abstracts, size))
+
+    def batches(self, size):
+        """Iterate all batches.
+        """
+        for abstracts in chunked_iter(self.abstracts, size):
+            yield Batch(abstracts)
 
 
 class Encoder(nn.Module):
@@ -290,7 +303,8 @@ def order_greedy(ab, r_encoder, classifier):
             if j not in order
         ]
 
-        right = sents[torch.LongTensor(right_idx).type(itype)]
+        # Right context.
+        right = ab[torch.LongTensor(right_idx).type(itype)]
 
         zeros = Variable(torch.zeros(ab.data.shape[1])).type(ftype)
 
@@ -302,7 +316,17 @@ def order_greedy(ab, r_encoder, classifier):
         index = Variable(torch.Tensor([i])).type(ftype)
         ratio = Variable(torch.Tensor([i / (len(ab)-1)])).type(ftype)
 
-        context = torch.cat([minus1, minus2, index, ratio])
+        # Encoded right context.
+        right_enc, reorder = pad_and_pack([right], 30)
+        right_enc = r_encoder(right_enc, reorder)
+
+        context = torch.cat([
+            minus1,
+            minus2,
+            index,
+            ratio,
+            right_enc[0]
+        ])
 
         # Candidate sentences.
         x = torch.stack([
@@ -310,7 +334,8 @@ def order_greedy(ab, r_encoder, classifier):
             for sent in right
         ])
 
-        preds = np.array(classifier(x).data.tolist())
+        preds = classifier(x).view(len(x), 2)
+        preds = np.array(preds.data.tolist())
 
         pred = right_idx.pop(np.argmax(preds[:,0]))
         order.append(pred)
