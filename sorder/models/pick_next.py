@@ -365,7 +365,7 @@ def predict(test_path, s_encoder_path, r_encoder_path, classifier_path,
     )
 
     gps = []
-    for batch in tqdm(test.batches(100)):
+    for i, batch in enumerate(tqdm(test.batches(100))):
 
         batch.shuffle()
 
