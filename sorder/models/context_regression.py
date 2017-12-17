@@ -293,7 +293,7 @@ def regress_sents(ab, graf_encoder, regressor):
 
 
 def predict(test_path, sent_encoder_path, graf_encoder_path, regressor_path,
-    test_skim, map_source, map_target):
+    gp_path, test_skim, map_source, map_target):
     """Predict order.
     """
     test = Corpus(test_path, test_skim)
@@ -313,7 +313,7 @@ def predict(test_path, sent_encoder_path, graf_encoder_path, regressor_path,
         map_location={map_source: map_target},
     )
 
-    kts = []
+    gps = []
     for batch in tqdm(test.batches(100)):
 
         batch.shuffle()
@@ -330,10 +330,9 @@ def predict(test_path, sent_encoder_path, graf_encoder_path, regressor_path,
             gold = [s.position for s in ab.sentences]
 
             pred = regress_sents(sents, graf_encoder, regressor)
-            pred = np.argsort(pred).argsort()
+            pred = np.argsort(pred).argsort().tolist()
 
-            kt, _ = stats.kendalltau(gold, pred)
-            kts.append(kt)
+            gps.append((gold, pred))
 
-    print(sum(kts) / len(kts))
-    print(kts.count(1) / len(kts))
+    with open(gp_path, 'w') as fh:
+        ujson.dump(gps, fh)

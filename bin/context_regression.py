@@ -32,6 +32,7 @@ def train(*args, **kwargs):
 @click.argument('sent_encoder_path', type=click.Path())
 @click.argument('graf_encoder_path', type=click.Path())
 @click.argument('regressor_path', type=click.Path())
+@click.argument('gp_path', type=click.Path())
 @click.option('--test_skim', type=int, default=10000)
 @click.option('--map_source', default='cpu')
 @click.option('--map_target', default='cpu')
