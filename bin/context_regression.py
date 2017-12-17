@@ -34,10 +34,12 @@ def train(*args, **kwargs):
 @click.argument('regressor_path', type=click.Path())
 @click.argument('gp_path', type=click.Path())
 @click.option('--test_skim', type=int, default=10000)
-@click.option('--map_source', default='cpu')
-@click.option('--map_target', default='cpu')
+@click.option('--map_source', default='cuda:0')
+@click.option('--map_target', default='cuda:0')
+@click.option('--gpu', type=int, default=0)
 def predict(*args, **kwargs):
-    model.predict(*args, **kwargs)
+    with cuda.gpu(kwargs.pop('gpu')):
+        model.predict(*args, **kwargs)
 
 
 if __name__ == '__main__':
