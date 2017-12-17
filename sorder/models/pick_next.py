@@ -268,5 +268,9 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
             c += matches.sum()
             t += len(matches)
 
+        checkpoint(model_path, 's_encoder', s_encoder, epoch)
+        checkpoint(model_path, 'r_encoder', r_encoder, epoch)
+        checkpoint(model_path, 'classifier', classifier, epoch)
+
         print(epoch_loss / epoch_size)
         print(c / t)
