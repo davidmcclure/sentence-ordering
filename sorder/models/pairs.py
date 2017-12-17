@@ -325,7 +325,9 @@ def predict(test_path, s_encoder_path, classifier_path, gp_path, test_skim,
             gold = [s.position for s in ab.sentences]
 
             pred = beam_search(sents, classifier)
-            pred = np.argsort(pred).argsort().tolist()
+            pred = np.argsort(pred).tolist()
+
+            print(gold, pred)
 
             gps.append((gold, pred))
 
