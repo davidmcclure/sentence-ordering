@@ -186,7 +186,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     train = Corpus(train_path, train_skim)
 
     s_encoder = Encoder(300, lstm_dim)
-    classifier = Classifier(2*lstm_dim, lin_dim)
+    classifier = Classifier(4*lstm_dim, lin_dim)
 
     params = (
         list(s_encoder.parameters()) +
