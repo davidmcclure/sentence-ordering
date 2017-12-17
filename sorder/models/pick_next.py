@@ -145,11 +145,11 @@ class Classifier(nn.Module):
         self.out = nn.Linear(lin_dim, 2)
 
     def forward(self, x):
-        y = F.relu(self.lin1(x))
-        y = F.relu(self.lin2(y))
-        y = F.relu(self.lin3(y))
-        y = F.relu(self.lin4(y))
-        y = F.relu(self.lin5(y))
+        y = F.tanh(self.lin1(x))
+        y = F.tanh(self.lin2(y))
+        # y = F.relu(self.lin3(y))
+        # y = F.relu(self.lin4(y))
+        # y = F.relu(self.lin5(y))
         y = F.log_softmax(self.out(y))
         return y.squeeze()
 
