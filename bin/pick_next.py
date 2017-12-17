@@ -3,6 +3,7 @@
 import click
 
 from sorder.models import pick_next as model
+from sorder import cuda
 
 
 @click.group()
@@ -21,7 +22,8 @@ def cli():
 @click.option('--lstm_dim', type=int, default=500)
 @click.option('--lin_dim', type=int, default=500)
 def train(*args, **kwargs):
-    model.train(*args, **kwargs)
+    with cuda.gpu(2):
+        model.train(*args, **kwargs)
 
 
 if __name__ == '__main__':

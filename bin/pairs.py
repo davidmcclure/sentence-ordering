@@ -1,8 +1,10 @@
 
 
 import click
+import torch
 
 from sorder.models import pairs as model
+from sorder import cuda
 
 
 @click.group()
@@ -21,7 +23,8 @@ def cli():
 @click.option('--lstm_dim', type=int, default=500)
 @click.option('--lin_dim', type=int, default=500)
 def train(*args, **kwargs):
-    model.train(*args, **kwargs)
+    with cuda.gpu(1):
+        model.train(*args, **kwargs)
 
 
 if __name__ == '__main__':
