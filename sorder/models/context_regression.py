@@ -100,6 +100,12 @@ class Batch:
             yield encoded[start:end]
             start = end
 
+    def shuffle(self):
+        """Shuffle sentences in all abstracts.
+        """
+        for ab in self.abstracts:
+            random.shuffle(ab.sentences)
+
 
 class Corpus:
 
@@ -275,7 +281,7 @@ def regress_sents(ab, graf_encoder, regressor):
     grafs, sents, sizes = zip(*examples)
 
     # Encode grafs.
-    grafs, reorder = pad_and_pack(grafs, 10)
+    grafs, reorder = pad_and_pack(grafs, 30)
     grafs = graf_encoder(grafs, reorder)
 
     # <graf, sent, size>
@@ -283,9 +289,7 @@ def regress_sents(ab, graf_encoder, regressor):
     x = list(map(torch.cat, x))
     x = torch.stack(x)
 
-    pred = regressor(x)
-
-    return np.argsort(pred.data.tolist())
+    return regressor(x).data.tolist()
 
 
 def predict(test_path, sent_encoder_path, graf_encoder_path, regressor_path,
@@ -312,6 +316,8 @@ def predict(test_path, sent_encoder_path, graf_encoder_path, regressor_path,
     kts = []
     for batch in tqdm(test.batches(100)):
 
+        batch.shuffle()
+
         # Encode sentence batch.
         sent_batch, reorder = batch.packed_sentence_tensor()
         sent_batch = sent_encoder(sent_batch, reorder)
@@ -321,8 +327,10 @@ def predict(test_path, sent_encoder_path, graf_encoder_path, regressor_path,
 
         for ab, sents in zip(batch.abstracts, unpacked):
 
-            gold = np.argsort([s.position for s in ab.sentences])
+            gold = [s.position for s in ab.sentences]
+
             pred = regress_sents(sents, graf_encoder, regressor)
+            pred = np.argsort(pred).argsort()
 
             kt, _ = stats.kendalltau(gold, pred)
             kts.append(kt)
