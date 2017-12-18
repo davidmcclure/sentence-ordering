@@ -4,6 +4,7 @@ import numpy as np
 
 import attr
 import warnings
+import ujson
 
 from cached_property import cached_property
 from collections import defaultdict, Counter, OrderedDict
@@ -16,6 +17,11 @@ warnings.simplefilter("ignore")
 
 
 class Metrics:
+
+    @classmethod
+    def from_file(cls, path):
+        with open(path) as fh:
+            return cls(ujson.load(fh))
 
     def __init__(self, gold_pred):
         self.gold_pred = gold_pred

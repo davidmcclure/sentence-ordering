@@ -320,13 +320,7 @@ def order_greedy(ab, r_encoder, classifier):
         right_enc, reorder = pad_and_pack([right], 30)
         right_enc = r_encoder(right_enc, reorder)
 
-        context = torch.cat([
-            minus1,
-            minus2,
-            index,
-            ratio,
-            right_enc[0]
-        ])
+        context = torch.cat([minus1, minus2, index, ratio, right_enc[0]])
 
         # Candidate sentences.
         x = torch.stack([
@@ -341,6 +335,64 @@ def order_greedy(ab, r_encoder, classifier):
         order.append(pred)
 
     return order
+
+
+def order_beam_search(ab, r_encoder, classifier, beam_size=100):
+    """Beam search.
+    """
+    beam = [((), 0)]
+
+    for i in range(len(ab)):
+
+        new_beam, x = [], []
+
+        for order, score in beam:
+
+            right_idx = [
+                j for j in range(len(ab))
+                if j not in order
+            ]
+
+            # Right context.
+            right = ab[torch.LongTensor(right_idx).type(itype)]
+
+            zeros = Variable(torch.zeros(ab.data.shape[1])).type(ftype)
+
+            # Previous 2 sentences.
+            minus1 = ab[order[-1]] if i > 0 else zeros
+            minus2 = ab[order[-2]] if i > 1 else zeros
+
+            # Raw position index, 0 <-> 1 ratio.
+            index = Variable(torch.Tensor([i])).type(ftype)
+            ratio = Variable(torch.Tensor([i / (len(ab)-1)])).type(ftype)
+
+            # Encoded right context.
+            right_enc, reorder = pad_and_pack([right], 30)
+            right_enc = r_encoder(right_enc, reorder)
+
+            context = torch.cat([minus1, minus2, index, ratio, right_enc[0]])
+
+            for r in right_idx:
+                new_beam.append(((*order, r), score))
+                x.append(torch.cat([ab[r], context]))
+
+        x = torch.stack(x)
+
+        y = classifier(x)
+
+        # Update scores.
+        new_beam = [
+            (path, score + new_score.data[0])
+            for (path, score), new_score in zip(new_beam, y)
+        ]
+
+        # Sort by score.
+        new_beam = sorted(new_beam, key=lambda x: x[1], reverse=True)
+
+        # Keep N highest scoring paths.
+        beam = new_beam[:beam_size]
+
+    return beam[0][0]
 
 
 def predict(test_path, s_encoder_path, r_encoder_path, classifier_path,
@@ -365,7 +417,7 @@ def predict(test_path, s_encoder_path, r_encoder_path, classifier_path,
     )
 
     gps = []
-    for i, batch in enumerate(tqdm(test.batches(100))):
+    for i, batch in enumerate(tqdm(test.batches(10))):
 
         batch.shuffle()
 
@@ -381,8 +433,10 @@ def predict(test_path, s_encoder_path, r_encoder_path, classifier_path,
             gold = [s.position for s in ab.sentences]
 
             # Predict.
-            pred = order_greedy(sents, r_encoder, classifier)
+            pred = order_beam_search(sents, r_encoder, classifier)
             pred = np.argsort(pred).tolist()
+
+            print(pred, gold)
 
             gps.append((gold, pred))
 
