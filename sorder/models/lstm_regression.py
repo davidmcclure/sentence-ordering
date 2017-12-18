@@ -198,7 +198,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
         list(regressor.parameters())
     )
 
-    optimizer = torch.optim.Adam(params, lr=lr)
+    optimizer = torch.optim.RMSprop(params, lr=lr)
 
     loss_func = nn.MSELoss()
 
