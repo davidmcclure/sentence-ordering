@@ -19,7 +19,7 @@ def cli():
 @click.option('--epochs', type=int, default=1000)
 @click.option('--epoch_size', type=int, default=1000)
 @click.option('--batch_size', type=int, default=20)
-@click.option('--lstm_dim', type=int, default=500)
+@click.option('--lstm_dim', type=int, default=1024)
 @click.option('--lin_dim', type=int, default=500)
 @click.option('--gpu', type=int, default=0)
 def train(*args, **kwargs):
