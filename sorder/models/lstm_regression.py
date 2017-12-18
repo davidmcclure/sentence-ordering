@@ -232,78 +232,42 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
         print(epoch_loss / epoch_size)
 
 
-# def regress_sents(ab, graf_encoder, regressor):
-    # """Regress sentences, get order.
-    # """
-    # # Generate x / y pairs.
-    # examples = []
-    # for i in range(len(ab)):
+def predict(test_path, sent_encoder_path, regressor_path, gp_path,
+    test_skim, map_source, map_target):
+    """Predict order.
+    """
+    test = Corpus(test_path, test_skim)
 
-        # # Graf = sentence + context.
-        # perm = torch.randperm(len(ab)).type(itype)
-        # graf = torch.cat([ab[i].unsqueeze(0), ab[perm]])
+    sent_encoder = torch.load(
+        sent_encoder_path,
+        map_location={map_source: map_target},
+    )
 
-        # # Paragraph length.
-        # size = Variable(torch.FloatTensor([len(ab)])).type(ftype)
+    regressor = torch.load(
+        regressor_path,
+        map_location={map_source: map_target},
+    )
 
-        # # Graf, sentence, size, position.
-        # examples.append((graf, ab[i], size))
+    gps = []
+    for batch in tqdm(test.batches(100)):
 
-    # grafs, sents, sizes = zip(*examples)
+        batch.shuffle()
 
-    # # Encode grafs.
-    # grafs, reorder = pad_and_pack(grafs, 30)
-    # grafs = graf_encoder(grafs, reorder)
+        # Encode sentence batch.
+        sent_batch, reorder = batch.packed_sentence_tensor()
+        sent_batch = sent_encoder(sent_batch, reorder)
 
-    # # <graf, sent, size>
-    # x = zip(grafs, sents, sizes)
-    # x = list(map(torch.cat, x))
-    # x = torch.stack(x)
+        # Re-group by abstract.
+        unpacked = batch.unpack_sentences(sent_batch)
 
-    # return regressor(x).data.tolist()
+        for ab, sents in zip(batch.abstracts, unpacked):
 
+            gold = [s.position for s in ab.sentences]
 
-# def predict(test_path, sent_encoder_path, graf_encoder_path, regressor_path,
-    # gp_path, test_skim, map_source, map_target):
-    # """Predict order.
-    # """
-    # test = Corpus(test_path, test_skim)
+            pred = regressor(sents).data.tolist()
+            pred = np.argsort(pred).argsort().tolist()
 
-    # sent_encoder = torch.load(
-        # sent_encoder_path,
-        # map_location={map_source: map_target},
-    # )
+            gps.append((gold, pred))
 
-    # graf_encoder = torch.load(
-        # graf_encoder_path,
-        # map_location={map_source: map_target},
-    # )
-
-    # regressor = torch.load(
-        # regressor_path,
-        # map_location={map_source: map_target},
-    # )
-
-    # gps = []
-    # for batch in tqdm(test.batches(100)):
-
-        # batch.shuffle()
-
-        # # Encode sentence batch.
-        # sent_batch, reorder = batch.packed_sentence_tensor()
-        # sent_batch = sent_encoder(sent_batch, reorder)
-
-        # # Re-group by abstract.
-        # unpacked = batch.unpack_sentences(sent_batch)
-
-        # for ab, sents in zip(batch.abstracts, unpacked):
-
-            # gold = [s.position for s in ab.sentences]
-
-            # pred = regress_sents(sents, graf_encoder, regressor)
-            # pred = np.argsort(pred).argsort().tolist()
-
-            # gps.append((gold, pred))
-
-    # with open(gp_path, 'w') as fh:
-        # ujson.dump(gps, fh)
+    with open(gp_path, 'w') as fh:
+        ujson.dump(gps, fh)
