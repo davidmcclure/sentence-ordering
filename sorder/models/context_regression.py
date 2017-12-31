@@ -179,27 +179,24 @@ def train_batch(batch, sent_encoder, graf_encoder, regressor):
     for ab in batch.unpack_sentences(sents):
         for i in range(len(ab)):
 
-            # Graf = sentence + context.
+            # Shuffle global context.
             perm = torch.randperm(len(ab)).type(itype)
-            graf = torch.cat([ab[i].unsqueeze(0), ab[perm]])
+            graf = ab[perm]
 
-            # Paragraph length.
-            size = Variable(torch.FloatTensor([len(ab)])).type(ftype)
-
-            # 0 <--> 100
-            y = (i / (len(ab)-1)) * 100
+            # 0 <--> 1
+            y = i / (len(ab)-1)
 
             # Graf, sentence, size, position.
-            examples.append((graf, ab[i], size, y))
+            examples.append((graf, ab[i], y))
 
-    grafs, sents, sizes, ys = zip(*examples)
+    grafs, sents, ys = zip(*examples)
 
     # Encode grafs.
     grafs, reorder = pad_and_pack(grafs, 30)
     grafs = graf_encoder(grafs, reorder)
 
     # <graf, sent, size>
-    x = zip(grafs, sents, sizes)
+    x = zip(grafs, sents)
     x = list(map(torch.cat, x))
     x = torch.stack(x)
 
@@ -216,7 +213,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     sent_encoder = Encoder(300, lstm_dim)
     graf_encoder = Encoder(2*lstm_dim, lstm_dim)
-    regressor = Regressor(4*lstm_dim+1, lin_dim)
+    regressor = Regressor(4*lstm_dim, lin_dim)
 
     params = (
         list(sent_encoder.parameters()) +

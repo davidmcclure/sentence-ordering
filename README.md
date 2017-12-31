@@ -1,4 +1,4 @@
 
 # Sentence ordering
 
-Put sentences in order!
+Put sentences in order.
