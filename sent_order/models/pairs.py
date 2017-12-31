@@ -8,6 +8,7 @@ import torch
 import attr
 import random
 import ujson
+import math
 
 from tqdm import tqdm
 from itertools import islice
@@ -20,9 +21,9 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torch.autograd import Variable
 from torch.nn import functional as F
 
-from sorder.cuda import ftype, itype
-from sorder.vectors import LazyVectors
-from sorder.utils import checkpoint, pad_and_pack
+from sent_order.utils import checkpoint, pad_and_pack
+from sent_order.vectors import LazyVectors
+from sent_order.cuda import ftype, itype
 
 
 vectors = LazyVectors.read()
@@ -139,13 +140,13 @@ class Encoder(nn.Module):
             bidirectional=True)
 
     def forward(self, x, reorder):
-        _, (hn, cn) = self.lstm(x)
+        _, (hn, _) = self.lstm(x)
         # Cat forward + backward hidden layers.
         out = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
         return out[reorder]
 
 
-class Regressor(nn.Module):
+class Classifier(nn.Module):
 
     def __init__(self, input_dim, lin_dim):
         super().__init__()
@@ -154,7 +155,7 @@ class Regressor(nn.Module):
         self.lin3 = nn.Linear(lin_dim, lin_dim)
         self.lin4 = nn.Linear(lin_dim, lin_dim)
         self.lin5 = nn.Linear(lin_dim, lin_dim)
-        self.out = nn.Linear(lin_dim, 1)
+        self.out = nn.Linear(lin_dim, 2)
 
     def forward(self, x):
         y = F.relu(self.lin1(x))
@@ -162,47 +163,33 @@ class Regressor(nn.Module):
         y = F.relu(self.lin3(y))
         y = F.relu(self.lin4(y))
         y = F.relu(self.lin5(y))
-        y = self.out(y)
+        y = F.log_softmax(self.out(y))
         return y.squeeze()
 
 
-def train_batch(batch, sent_encoder, graf_encoder, regressor):
+def train_batch(batch, s_encoder, classifier):
     """Train the batch.
     """
     x, reorder = batch.packed_sentence_tensor()
 
     # Encode sentences.
-    sents = sent_encoder(x, reorder)
+    sents = s_encoder(x, reorder)
 
     # Generate x / y pairs.
-    examples = []
+    x, y = [], []
     for ab in batch.unpack_sentences(sents):
-        for i in range(len(ab)):
+        for s1, s2 in pairwise(ab):
 
-            # Shuffle global context.
-            perm = torch.randperm(len(ab)).type(itype)
-            graf = ab[perm]
+            x.append(torch.cat([s1, s2]))
+            y.append(0)
 
-            # 0 <--> 1
-            y = i / (len(ab)-1)
+            x.append(torch.cat([s2, s1]))
+            y.append(1)
 
-            # Graf, sentence, size, position.
-            examples.append((graf, ab[i], y))
-
-    grafs, sents, ys = zip(*examples)
-
-    # Encode grafs.
-    grafs, reorder = pad_and_pack(grafs, 30)
-    grafs = graf_encoder(grafs, reorder)
-
-    # <graf, sent, size>
-    x = zip(grafs, sents)
-    x = list(map(torch.cat, x))
     x = torch.stack(x)
+    y = Variable(torch.LongTensor(y)).type(itype)
 
-    y = Variable(torch.FloatTensor(ys)).type(ftype)
-
-    return y, regressor(x)
+    return classifier(x), y
 
 
 def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
@@ -211,38 +198,35 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     """
     train = Corpus(train_path, train_skim)
 
-    sent_encoder = Encoder(300, lstm_dim)
-    graf_encoder = Encoder(2*lstm_dim, lstm_dim)
-    regressor = Regressor(4*lstm_dim, lin_dim)
+    s_encoder = Encoder(300, lstm_dim)
+    classifier = Classifier(4*lstm_dim, lin_dim)
 
     params = (
-        list(sent_encoder.parameters()) +
-        list(graf_encoder.parameters()) +
-        list(regressor.parameters())
+        list(s_encoder.parameters()) +
+        list(classifier.parameters())
     )
 
     optimizer = torch.optim.Adam(params, lr=lr)
 
-    loss_func = nn.MSELoss()
+    loss_func = nn.NLLLoss()
 
     if torch.cuda.is_available():
-        sent_encoder = sent_encoder.cuda()
-        graf_encoder = graf_encoder.cuda()
-        regressor = regressor.cuda()
+        s_encoder = s_encoder.cuda()
+        classifier = classifier.cuda()
 
     for epoch in range(epochs):
 
         print(f'\nEpoch {epoch}')
 
-        epoch_loss = 0
+        epoch_loss, c, t = 0, 0, 0
+
         for _ in tqdm(range(epoch_size)):
 
             optimizer.zero_grad()
 
             batch = train.random_batch(batch_size)
 
-            y, y_pred = train_batch(batch, sent_encoder, \
-                    graf_encoder, regressor)
+            y_pred, y = train_batch(batch, s_encoder, classifier)
 
             loss = loss_func(y_pred, y)
             loss.backward()
@@ -251,73 +235,87 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             epoch_loss += loss.data[0]
 
-        checkpoint(model_path, 'sent_encoder', sent_encoder, epoch)
-        checkpoint(model_path, 'graf_encoder', graf_encoder, epoch)
-        checkpoint(model_path, 'regressor', regressor, epoch)
+            # EVAL
+
+            matches = (
+                np.argmax(y_pred.data.tolist(), 1) ==
+                np.array(y.data.tolist())
+            )
+
+            c += matches.sum()
+            t += len(matches)
+
+        checkpoint(model_path, 's_encoder', s_encoder, epoch)
+        checkpoint(model_path, 'classifier', classifier, epoch)
 
         print(epoch_loss / epoch_size)
+        print(c / t)
 
 
-def regress_sents(ab, graf_encoder, regressor):
-    """Regress sentences, get order.
+def beam_search(ab, classifier, beam_size=100):
+    """Beam search.
     """
-    # Generate x / y pairs.
-    examples = []
-    for i in range(len(ab)):
+    beam = [((i,), 0) for i in range(len(ab))]
 
-        # Graf = sentence + context.
-        perm = torch.randperm(len(ab)).type(itype)
-        graf = torch.cat([ab[i].unsqueeze(0), ab[perm]])
+    for _ in range(len(ab)-1):
 
-        # Paragraph length.
-        size = Variable(torch.FloatTensor([len(ab)])).type(ftype)
+        new_beam = []
 
-        # Graf, sentence, size, position.
-        examples.append((graf, ab[i], size))
+        # Get new path candidates.
+        for path, score in beam:
+            for i in range(len(ab)):
+                if i not in path:
+                    new_beam.append(((*path, i), score))
 
-    grafs, sents, sizes = zip(*examples)
+        # Get input tensors from final two sents.
+        x = torch.stack([
+            torch.cat([ab[p[-2]], ab[p[-1]]])
+            for p, _ in new_beam
+        ])
 
-    # Encode grafs.
-    grafs, reorder = pad_and_pack(grafs, 30)
-    grafs = graf_encoder(grafs, reorder)
+        x = x.type(ftype)
 
-    # <graf, sent, size>
-    x = zip(grafs, sents, sizes)
-    x = list(map(torch.cat, x))
-    x = torch.stack(x)
+        y = classifier(x)
 
-    return regressor(x).data.tolist()
+        # Update scores.
+        new_beam = [
+            (path, score + new_score.data[0])
+            for (path, score), new_score in zip(new_beam, y)
+        ]
+
+        # Sort by score.
+        new_beam = sorted(new_beam, key=lambda x: x[1], reverse=True)
+
+        # Keep N highest scoring paths.
+        beam = new_beam[:beam_size]
+
+    return beam[0][0]
 
 
-def predict(test_path, sent_encoder_path, graf_encoder_path, regressor_path,
-    gp_path, test_skim, map_source, map_target):
+def predict(test_path, s_encoder_path, classifier_path, gp_path, test_skim,
+    map_source, map_target):
     """Predict order.
     """
     test = Corpus(test_path, test_skim)
 
-    sent_encoder = torch.load(
-        sent_encoder_path,
+    s_encoder = torch.load(
+        s_encoder_path,
         map_location={map_source: map_target},
     )
 
-    graf_encoder = torch.load(
-        graf_encoder_path,
-        map_location={map_source: map_target},
-    )
-
-    regressor = torch.load(
-        regressor_path,
+    classifier = torch.load(
+        classifier_path,
         map_location={map_source: map_target},
     )
 
     gps = []
-    for batch in tqdm(test.batches(100)):
+    for i, batch in enumerate(tqdm(test.batches(100))):
 
         batch.shuffle()
 
         # Encode sentence batch.
         sent_batch, reorder = batch.packed_sentence_tensor()
-        sent_batch = sent_encoder(sent_batch, reorder)
+        sent_batch = s_encoder(sent_batch, reorder)
 
         # Re-group by abstract.
         unpacked = batch.unpack_sentences(sent_batch)
@@ -326,10 +324,15 @@ def predict(test_path, sent_encoder_path, graf_encoder_path, regressor_path,
 
             gold = [s.position for s in ab.sentences]
 
-            pred = regress_sents(sents, graf_encoder, regressor)
-            pred = np.argsort(pred).argsort().tolist()
+            pred = beam_search(sents, classifier)
+            pred = np.argsort(pred).tolist()
 
             gps.append((gold, pred))
+
+        # TODO|dev
+        if i % 100 == 0:
+            with open(gp_path, 'w') as fh:
+                ujson.dump(gps, fh)
 
     with open(gp_path, 'w') as fh:
         ujson.dump(gps, fh)

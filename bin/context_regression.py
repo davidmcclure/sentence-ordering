@@ -2,8 +2,8 @@
 
 import click
 
-from sorder.models import context_regression as model
-from sorder import cuda
+from sent_order.models import context_regression as model
+from sent_order import cuda
 
 
 @click.group()

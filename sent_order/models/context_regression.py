@@ -8,7 +8,6 @@ import torch
 import attr
 import random
 import ujson
-import math
 
 from tqdm import tqdm
 from itertools import islice
@@ -21,10 +20,9 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torch.autograd import Variable
 from torch.nn import functional as F
 
-from sorder.utils import checkpoint, pad_and_pack
-from sorder.vectors import LazyVectors
-from sorder.cuda import ftype, itype
-from sorder.perms import sample_perms
+from sent_order.cuda import ftype, itype
+from sent_order.vectors import LazyVectors
+from sent_order.utils import checkpoint, pad_and_pack
 
 
 vectors = LazyVectors.read()
@@ -42,6 +40,7 @@ def read_abstracts(path):
 @attr.s
 class Sentence:
 
+    position = attr.ib()
     tokens = attr.ib()
 
     def tensor(self, dim=300):
@@ -71,8 +70,8 @@ class Abstract:
         json = ujson.loads(line.strip())
 
         return cls([
-            Sentence(s['token'])
-            for s in json['sentences']
+            Sentence(i, s['token'])
+            for i, s in enumerate(json['sentences'])
         ])
 
 
@@ -101,6 +100,12 @@ class Batch:
             yield encoded[start:end]
             start = end
 
+    def shuffle(self):
+        """Shuffle sentences in all abstracts.
+        """
+        for ab in self.abstracts:
+            random.shuffle(ab.sentences)
+
 
 class Corpus:
 
@@ -119,6 +124,12 @@ class Corpus:
         """
         return Batch(random.sample(self.abstracts, size))
 
+    def batches(self, size):
+        """Iterate all batches.
+        """
+        for abstracts in chunked_iter(self.abstracts, size):
+            yield Batch(abstracts)
+
 
 class Encoder(nn.Module):
 
@@ -128,7 +139,7 @@ class Encoder(nn.Module):
             bidirectional=True)
 
     def forward(self, x, reorder):
-        _, (hn, _) = self.lstm(x)
+        _, (hn, cn) = self.lstm(x)
         # Cat forward + backward hidden layers.
         out = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
         return out[reorder]
@@ -136,14 +147,9 @@ class Encoder(nn.Module):
 
 class Regressor(nn.Module):
 
-    def __init__(self, lstm_dim, lin_dim):
-
+    def __init__(self, input_dim, lin_dim):
         super().__init__()
-
-        self.lstm = nn.LSTM(lstm_dim, lstm_dim, batch_first=True,
-            bidirectional=True)
-
-        self.lin1 = nn.Linear(lstm_dim*2, lin_dim)
+        self.lin1 = nn.Linear(input_dim, lin_dim)
         self.lin2 = nn.Linear(lin_dim, lin_dim)
         self.lin3 = nn.Linear(lin_dim, lin_dim)
         self.lin4 = nn.Linear(lin_dim, lin_dim)
@@ -151,23 +157,16 @@ class Regressor(nn.Module):
         self.out = nn.Linear(lin_dim, 1)
 
     def forward(self, x):
-
-        _, (hn, _) = self.lstm(x)
-
-        # Cat forward + backward hidden layers.
-        y = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
-
-        y = F.relu(self.lin1(y))
+        y = F.relu(self.lin1(x))
         y = F.relu(self.lin2(y))
         y = F.relu(self.lin3(y))
         y = F.relu(self.lin4(y))
         y = F.relu(self.lin5(y))
         y = self.out(y)
-
         return y.squeeze()
 
 
-def train_batch(batch, sent_encoder, regressor):
+def train_batch(batch, sent_encoder, graf_encoder, regressor):
     """Train the batch.
     """
     x, reorder = batch.packed_sentence_tensor()
@@ -176,24 +175,34 @@ def train_batch(batch, sent_encoder, regressor):
     sents = sent_encoder(x, reorder)
 
     # Generate x / y pairs.
-    x, y = [], []
+    examples = []
     for ab in batch.unpack_sentences(sents):
+        for i in range(len(ab)):
 
-        dist = random.random()
+            # Shuffle global context.
+            perm = torch.randperm(len(ab)).type(itype)
+            graf = ab[perm]
 
-        for perm in sample_perms(len(ab), dist):
+            # 0 <--> 1
+            y = i / (len(ab)-1)
 
-            perm = list(map(int, perm.tolist()))
-            perm = torch.LongTensor(perm).type(itype)
+            # Graf, sentence, size, position.
+            examples.append((graf, ab[i], y))
 
-            x.append(ab[perm])
-            y.append(dist)
+    grafs, sents, ys = zip(*examples)
 
-    x, reorder = pad_and_pack(x, 30)
+    # Encode grafs.
+    grafs, reorder = pad_and_pack(grafs, 30)
+    grafs = graf_encoder(grafs, reorder)
 
-    y = Variable(torch.FloatTensor(y)).type(ftype)
+    # <graf, sent, size>
+    x = zip(grafs, sents)
+    x = list(map(torch.cat, x))
+    x = torch.stack(x)
 
-    return regressor(x), y
+    y = Variable(torch.FloatTensor(ys)).type(ftype)
+
+    return y, regressor(x)
 
 
 def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
@@ -203,19 +212,22 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     train = Corpus(train_path, train_skim)
 
     sent_encoder = Encoder(300, lstm_dim)
-    regressor = Regressor(lstm_dim*2, lin_dim)
+    graf_encoder = Encoder(2*lstm_dim, lstm_dim)
+    regressor = Regressor(4*lstm_dim, lin_dim)
 
     params = (
         list(sent_encoder.parameters()) +
+        list(graf_encoder.parameters()) +
         list(regressor.parameters())
     )
 
     optimizer = torch.optim.Adam(params, lr=lr)
 
-    loss_func = nn.L1Loss()
+    loss_func = nn.MSELoss()
 
     if torch.cuda.is_available():
         sent_encoder = sent_encoder.cuda()
+        graf_encoder = graf_encoder.cuda()
         regressor = regressor.cuda()
 
     for epoch in range(epochs):
@@ -223,14 +235,14 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
         print(f'\nEpoch {epoch}')
 
         epoch_loss = 0
-
         for _ in tqdm(range(epoch_size)):
 
             optimizer.zero_grad()
 
             batch = train.random_batch(batch_size)
 
-            y_pred, y = train_batch(batch, sent_encoder, regressor)
+            y, y_pred = train_batch(batch, sent_encoder, \
+                    graf_encoder, regressor)
 
             loss = loss_func(y_pred, y)
             loss.backward()
@@ -239,4 +251,85 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             epoch_loss += loss.data[0]
 
+        checkpoint(model_path, 'sent_encoder', sent_encoder, epoch)
+        checkpoint(model_path, 'graf_encoder', graf_encoder, epoch)
+        checkpoint(model_path, 'regressor', regressor, epoch)
+
         print(epoch_loss / epoch_size)
+
+
+def regress_sents(ab, graf_encoder, regressor):
+    """Regress sentences, get order.
+    """
+    # Generate x / y pairs.
+    examples = []
+    for i in range(len(ab)):
+
+        # Graf = sentence + context.
+        perm = torch.randperm(len(ab)).type(itype)
+        graf = torch.cat([ab[i].unsqueeze(0), ab[perm]])
+
+        # Paragraph length.
+        size = Variable(torch.FloatTensor([len(ab)])).type(ftype)
+
+        # Graf, sentence, size, position.
+        examples.append((graf, ab[i], size))
+
+    grafs, sents, sizes = zip(*examples)
+
+    # Encode grafs.
+    grafs, reorder = pad_and_pack(grafs, 30)
+    grafs = graf_encoder(grafs, reorder)
+
+    # <graf, sent, size>
+    x = zip(grafs, sents, sizes)
+    x = list(map(torch.cat, x))
+    x = torch.stack(x)
+
+    return regressor(x).data.tolist()
+
+
+def predict(test_path, sent_encoder_path, graf_encoder_path, regressor_path,
+    gp_path, test_skim, map_source, map_target):
+    """Predict order.
+    """
+    test = Corpus(test_path, test_skim)
+
+    sent_encoder = torch.load(
+        sent_encoder_path,
+        map_location={map_source: map_target},
+    )
+
+    graf_encoder = torch.load(
+        graf_encoder_path,
+        map_location={map_source: map_target},
+    )
+
+    regressor = torch.load(
+        regressor_path,
+        map_location={map_source: map_target},
+    )
+
+    gps = []
+    for batch in tqdm(test.batches(100)):
+
+        batch.shuffle()
+
+        # Encode sentence batch.
+        sent_batch, reorder = batch.packed_sentence_tensor()
+        sent_batch = sent_encoder(sent_batch, reorder)
+
+        # Re-group by abstract.
+        unpacked = batch.unpack_sentences(sent_batch)
+
+        for ab, sents in zip(batch.abstracts, unpacked):
+
+            gold = [s.position for s in ab.sentences]
+
+            pred = regress_sents(sents, graf_encoder, regressor)
+            pred = np.argsort(pred).argsort().tolist()
+
+            gps.append((gold, pred))
+
+    with open(gp_path, 'w') as fh:
+        ujson.dump(gps, fh)

@@ -21,9 +21,9 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torch.autograd import Variable
 from torch.nn import functional as F
 
-from sorder.utils import checkpoint, pad_and_pack
-from sorder.vectors import LazyVectors
-from sorder.cuda import ftype, itype
+from sent_order.utils import checkpoint, pad_and_pack
+from sent_order.vectors import LazyVectors
+from sent_order.cuda import ftype, itype
 
 
 vectors = LazyVectors.read()
@@ -167,7 +167,7 @@ class Classifier(nn.Module):
         return y.squeeze()
 
 
-def train_batch(batch, s_encoder, classifier):
+def train_batch(batch, s_encoder, r_encoder, classifier):
     """Train the batch.
     """
     x, reorder = batch.packed_sentence_tensor()
@@ -176,18 +176,51 @@ def train_batch(batch, s_encoder, classifier):
     sents = s_encoder(x, reorder)
 
     # Generate x / y pairs.
-    x, y = [], []
+    examples = []
     for ab in batch.unpack_sentences(sents):
-        for s1, s2 in pairwise(ab):
+        for i in range(len(ab)-1):
 
-            x.append(torch.cat([s1, s2]))
-            y.append(0)
+            right = ab[i:]
 
-            x.append(torch.cat([s2, s1]))
-            y.append(1)
+            zeros = Variable(torch.zeros(ab.data.shape[1])).type(ftype)
 
+            # Previous 2 sentences.
+            minus1 = ab[i-1] if i > 0 else zeros
+            minus2 = ab[i-2] if i > 1 else zeros
+
+            # Shuffle right.
+            perm = torch.randperm(len(right)).type(itype)
+            shuffled_right = right[perm]
+
+            # Raw position index, 0 <-> 1 ratio.
+            index = Variable(torch.Tensor([i])).type(ftype)
+            ratio = Variable(torch.Tensor([i / (len(ab)-1)])).type(ftype)
+
+            context = torch.cat([minus1, minus2, index, ratio])
+
+            first = right[0]
+            other = random.choice(right[1:])
+
+            # Candidate + [n-1, n-2, 0-1]
+            first = torch.cat([first, context])
+            other = torch.cat([other, context])
+
+            # First / not-first.
+            examples.append((first, shuffled_right, 0))
+            examples.append((other, shuffled_right, 1))
+
+    sents, rights, ys = zip(*examples)
+
+    # Encode rights.
+    rights, reorder = pad_and_pack(rights, 30)
+    rights = r_encoder(rights, reorder)
+
+    # <sent, right>
+    x = zip(sents, rights)
+    x = list(map(torch.cat, x))
     x = torch.stack(x)
-    y = Variable(torch.LongTensor(y)).type(itype)
+
+    y = Variable(torch.LongTensor(ys)).type(itype)
 
     return classifier(x), y
 
@@ -199,10 +232,12 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     train = Corpus(train_path, train_skim)
 
     s_encoder = Encoder(300, lstm_dim)
-    classifier = Classifier(4*lstm_dim, lin_dim)
+    r_encoder = Encoder(2*lstm_dim, lstm_dim)
+    classifier = Classifier(8*lstm_dim+2, lin_dim)
 
     params = (
         list(s_encoder.parameters()) +
+        list(r_encoder.parameters()) +
         list(classifier.parameters())
     )
 
@@ -212,6 +247,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     if torch.cuda.is_available():
         s_encoder = s_encoder.cuda()
+        r_encoder = r_encoder.cuda()
         classifier = classifier.cuda()
 
     for epoch in range(epochs):
@@ -226,7 +262,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             batch = train.random_batch(batch_size)
 
-            y_pred, y = train_batch(batch, s_encoder, classifier)
+            y_pred, y = train_batch(batch, s_encoder, r_encoder, classifier)
 
             loss = loss_func(y_pred, y)
             loss.backward()
@@ -246,34 +282,101 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
             t += len(matches)
 
         checkpoint(model_path, 's_encoder', s_encoder, epoch)
+        checkpoint(model_path, 'r_encoder', r_encoder, epoch)
         checkpoint(model_path, 'classifier', classifier, epoch)
 
         print(epoch_loss / epoch_size)
         print(c / t)
 
 
-def beam_search(ab, classifier, beam_size=100):
-    """Beam search.
+def order_greedy(ab, r_encoder, classifier):
+    """Order greedy.
     """
-    beam = [((i,), 0) for i in range(len(ab))]
+    order = []
 
-    for _ in range(len(ab)-1):
+    while len(order) < len(ab):
 
-        new_beam = []
+        i = len(order)
 
-        # Get new path candidates.
-        for path, score in beam:
-            for i in range(len(ab)):
-                if i not in path:
-                    new_beam.append(((*path, i), score))
+        right_idx = [
+            j for j in range(len(ab))
+            if j not in order
+        ]
 
-        # Get input tensors from final two sents.
+        # Right context.
+        right = ab[torch.LongTensor(right_idx).type(itype)]
+
+        zeros = Variable(torch.zeros(ab.data.shape[1])).type(ftype)
+
+        # Previous 2 sentences.
+        minus1 = ab[i-1] if i > 0 else zeros
+        minus2 = ab[i-2] if i > 1 else zeros
+
+        # Raw position index, 0 <-> 1 ratio.
+        index = Variable(torch.Tensor([i])).type(ftype)
+        ratio = Variable(torch.Tensor([i / (len(ab)-1)])).type(ftype)
+
+        # Encoded right context.
+        right_enc, reorder = pad_and_pack([right], 30)
+        right_enc = r_encoder(right_enc, reorder)
+
+        context = torch.cat([minus1, minus2, index, ratio, right_enc[0]])
+
+        # Candidate sentences.
         x = torch.stack([
-            torch.cat([ab[p[-2]], ab[p[-1]]])
-            for p, _ in new_beam
+            torch.cat([sent, context])
+            for sent in right
         ])
 
-        x = x.type(ftype)
+        preds = classifier(x).view(len(x), 2)
+        preds = np.array(preds.data.tolist())
+
+        pred = right_idx.pop(np.argmax(preds[:,0]))
+        order.append(pred)
+
+    return order
+
+
+def order_beam_search(ab, r_encoder, classifier, beam_size=100):
+    """Beam search.
+    """
+    beam = [((), 0)]
+
+    for i in range(len(ab)):
+
+        new_beam, x = [], []
+
+        for order, score in beam:
+
+            right_idx = [
+                j for j in range(len(ab))
+                if j not in order
+            ]
+
+            # Right context.
+            right = ab[torch.LongTensor(right_idx).type(itype)]
+
+            zeros = Variable(torch.zeros(ab.data.shape[1])).type(ftype)
+
+            # Previous 2 sentences.
+            minus1 = ab[order[-1]] if i > 0 else zeros
+            minus2 = ab[order[-2]] if i > 1 else zeros
+
+            # Raw position index, 0 <-> 1 ratio.
+            index = Variable(torch.Tensor([i])).type(ftype)
+            ratio = Variable(torch.Tensor([i / (len(ab)-1)])).type(ftype)
+
+            # Encoded right context.
+            right_enc, reorder = pad_and_pack([right], 30)
+            right_enc = r_encoder(right_enc, reorder)
+
+            context = torch.cat([minus1, minus2, index, ratio, right_enc[0]])
+
+            for r in right_idx:
+                new_beam.append(((*order, r), score))
+                x.append(torch.cat([ab[r], context]))
+
+        x = torch.stack(x)
 
         y = classifier(x)
 
@@ -292,8 +395,8 @@ def beam_search(ab, classifier, beam_size=100):
     return beam[0][0]
 
 
-def predict(test_path, s_encoder_path, classifier_path, gp_path, test_skim,
-    map_source, map_target):
+def predict(test_path, s_encoder_path, r_encoder_path, classifier_path,
+    gp_path, test_skim, map_source, map_target):
     """Predict order.
     """
     test = Corpus(test_path, test_skim)
@@ -303,13 +406,18 @@ def predict(test_path, s_encoder_path, classifier_path, gp_path, test_skim,
         map_location={map_source: map_target},
     )
 
+    r_encoder = torch.load(
+        r_encoder_path,
+        map_location={map_source: map_target},
+    )
+
     classifier = torch.load(
         classifier_path,
         map_location={map_source: map_target},
     )
 
     gps = []
-    for i, batch in enumerate(tqdm(test.batches(100))):
+    for i, batch in enumerate(tqdm(test.batches(10))):
 
         batch.shuffle()
 
@@ -324,8 +432,11 @@ def predict(test_path, s_encoder_path, classifier_path, gp_path, test_skim,
 
             gold = [s.position for s in ab.sentences]
 
-            pred = beam_search(sents, classifier)
+            # Predict.
+            pred = order_beam_search(sents, r_encoder, classifier)
             pred = np.argsort(pred).tolist()
+
+            print(pred, gold)
 
             gps.append((gold, pred))
 

@@ -2,8 +2,8 @@
 
 import click
 
-from sorder.models import pick_next as model
-from sorder import cuda
+from sent_order.models import pick_next as model
+from sent_order import cuda
 
 
 @click.group()

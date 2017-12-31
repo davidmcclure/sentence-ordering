@@ -2,8 +2,8 @@
 
 import click
 
-from sorder.models import kt_regression as model
-from sorder import cuda
+from sent_order.models import kt_regression as model
+from sent_order import cuda
 
 
 @click.group()

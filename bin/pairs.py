@@ -3,8 +3,8 @@
 import click
 import torch
 
-from sorder.models import pairs as model
-from sorder import cuda
+from sent_order.models import pairs as model
+from sent_order import cuda
 
 
 @click.group()
