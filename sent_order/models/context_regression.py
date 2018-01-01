@@ -43,19 +43,13 @@ class Sentence:
     position = attr.ib()
     tokens = attr.ib()
 
-    def tensor(self, dim=300):
+    def tensor(self):
         """Stack word vectors.
         """
-        x = [
-            vectors[t] if t in vectors else np.zeros(dim)
+        return torch.LongTensor([
+            vectors.token_index(t)
             for t in self.tokens
-        ]
-
-        x = np.array(x)
-        x = torch.from_numpy(x)
-        x = x.float()
-
-        return x
+        ])
 
 
 @attr.s
@@ -84,7 +78,7 @@ class Batch:
         """Pack sentence tensors.
         """
         sents = [
-            Variable(s.tensor()).type(ftype)
+            Variable(s.tensor()).type(itype)
             for a in self.abstracts
             for s in a.sentences
         ]
@@ -129,6 +123,30 @@ class Corpus:
         """
         for abstracts in chunked_iter(self.abstracts, size):
             yield Batch(abstracts)
+
+
+class SentenceEncoder(nn.Module):
+
+    def __init__(self, lstm_dim):
+        """Initialize embeddings + LSTM
+        """
+        super().__init__()
+
+        weights = torch.from_numpy(vectors.weights)
+
+        self.embeddings = nn.Embedding(weights.shape[0], weights.shape[1])
+        self.embeddings.weight = nn.Parameter(weights)
+
+        self.lstm = nn.LSTM(weights.shape[1], lstm_dim, batch_first=True,
+            bidirectional=True)
+
+    def forward(self, x, reorder):
+
+        _, (hn, cn) = self.lstm(x)
+        # Cat forward + backward hidden layers.
+        out = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
+
+        return out[reorder]
 
 
 class Encoder(nn.Module):
@@ -185,6 +203,8 @@ def train_batch(batch, sent_encoder, graf_encoder, regressor):
 
             # 0 <--> 1
             y = i / (len(ab)-1)
+
+            # TODO: Re-add size.
 
             # Graf, sentence, size, position.
             examples.append((graf, ab[i], y))
