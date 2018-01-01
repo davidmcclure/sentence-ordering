@@ -154,7 +154,7 @@ class SentenceEncoder(nn.Module):
         """Map word indexes to embeddings, encode via LSTM.
 
         Args:
-            sents (list of Variable): Unpadded token indexes.
+            sents (list of Variable): Variables of unpadded token indexes.
         """
         # Pad token indexes.
         padded, sizes = pad_batch(sents, 50, 0)
@@ -172,17 +172,28 @@ class SentenceEncoder(nn.Module):
         return out[reorder]
 
 
-class Encoder(nn.Module):
+class ContextEncoder(nn.Module):
 
     def __init__(self, input_dim, lstm_dim):
+        """Initialize the LSTM.
+        """
         super().__init__()
-        self.lstm = nn.LSTM(input_dim, lstm_dim, batch_first=True,
-            bidirectional=True)
+
+        self.lstm = nn.LSTM(
+            input_dim,
+            lstm_dim,
+            bidirectional=True,
+            batch_first=True,
+        )
 
     def forward(self, x, reorder):
+        """Pad, pack, encode, reorder.
+        """
         _, (hn, cn) = self.lstm(x)
+
         # Cat forward + backward hidden layers.
         out = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
+
         return out[reorder]
 
 
@@ -254,7 +265,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     """
     train = Corpus(train_path, train_skim)
 
-    sent_encoder = Encoder(300, lstm_dim)
+    sent_encoder = SentenceEncoder(lstm_dim)
     graf_encoder = Encoder(2*lstm_dim, lstm_dim)
     regressor = Regressor(4*lstm_dim, lin_dim)
 
