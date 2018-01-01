@@ -1,5 +1,7 @@
 
 
+import numpy as np
+
 import os
 import attr
 
@@ -28,3 +30,11 @@ class LazyVectors:
 
     def __contains__(self, key):
         return key in self.model
+
+    @cached_property
+    def weights(self):
+        """Prepend a zeros row for <UNK>.
+        """
+        unk = np.zeros(self.model.vector_size)
+
+        return np.vstack([unk, self.model.syn0])
