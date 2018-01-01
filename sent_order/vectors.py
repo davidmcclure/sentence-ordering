@@ -38,3 +38,12 @@ class LazyVectors:
         unk = np.zeros(self.model.vector_size)
 
         return np.vstack([unk, self.model.syn0])
+
+    def token_index(self, token):
+        """Get the index of a word in the weights matrix.
+        """
+        return (
+            # Since <UKN> is 0.
+            self.model.vocab[token].index + 1
+            if token in self.model.vocab else 0
+        )
