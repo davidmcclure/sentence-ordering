@@ -27,7 +27,7 @@ class LazyVectors:
 
     @property
     def vocab_size(self):
-        return len(self.model.vocab)
+        return len(self.model.vocab) + 2
 
     @property
     def vector_dim(self):
@@ -36,15 +36,19 @@ class LazyVectors:
     def build_weights(self):
         """Prepend a zeros row for <UNK>.
         """
-        unk = np.zeros(self.model.vector_size)
+        zeros = np.zeros(self.vector_dim)
 
-        return np.vstack([unk, self.model.syn0])
+        return np.vstack([
+            zeros, # padding
+            zeros, # UNK
+            self.model.syn0
+        ])
 
     def token_index(self, token):
         """Get the index of a word in the weights matrix.
         """
         return (
-            # Since <UKN> is 0.
-            self.model.vocab[token].index + 1
-            if token in self.model.vocab else 0
+            # Since paddig / <UKN> are 0-1.
+            self.model.vocab[token].index + 2
+            if token in self.model.vocab else 1
         )

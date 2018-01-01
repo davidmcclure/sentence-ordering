@@ -21,8 +21,8 @@ from torch.autograd import Variable
 from torch.nn import functional as F
 
 from sent_order.cuda import ftype, itype
+from sent_order.utils import checkpoint, pad_and_pack, pad_batch, pack
 from sent_order.vectors import LazyVectors
-from sent_order.utils import checkpoint, pad_and_pack
 
 
 vectors = LazyVectors.read()
@@ -133,7 +133,7 @@ class SentenceEncoder(nn.Module):
         self.embeddings = nn.Embedding(
             vectors.vocab_size,
             vectors.vector_dim,
-            padding_idx=-1,
+            padding_idx=0,
         )
 
         self.lstm = nn.LSTM(
@@ -148,12 +148,28 @@ class SentenceEncoder(nn.Module):
         """
         weights = torch.from_numpy(vectors.build_weights())
 
-        self.embeddings.weight = nn.Parameter(weights)
+        self.embeddings.weight = nn.Parameter(weights.float())
 
     def forward(self, sents):
         """Map word indexes to embeddings, encode via LSTM.
+
+        Args:
+            sents (list of Variable): Unpadded token indexes.
         """
-        pass
+        # Pad token indexes.
+        padded, sizes = pad_batch(sents, 50, 0)
+
+        # Map to embeddings.
+        embeds = self.embeddings(padded)
+
+        # Encode sentences.
+        packed, reorder = pack(embeds, sizes)
+        _, (hn, _) = self.lstm(packed)
+
+        # Cat forward + backward hidden layers.
+        out = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
+
+        return out[reorder]
 
 
 class Encoder(nn.Module):
@@ -194,10 +210,10 @@ class Regressor(nn.Module):
 def train_batch(batch, sent_encoder, graf_encoder, regressor):
     """Train the batch.
     """
-    x, reorder = batch.packed_sentence_tensor()
+    sents = batch.sentence_variables()
 
     # Encode sentences.
-    sents = sent_encoder(x, reorder)
+    sents = sent_encoder(sents)
 
     # Generate x / y pairs.
     examples = []
