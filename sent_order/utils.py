@@ -48,6 +48,20 @@ def pad(variable, size):
     return variable, var_size
 
 
+def pad_batch(variable, size):
+    """Pad a batch of variables
+
+    Args:
+        variables (list of Variable)
+        size (int)
+
+    Returns: stacked tensor, sizes
+    """
+    padded, sizes = zip(*[pad(v, size) for v in variables])
+
+    return torch.stack(padded), sizes
+
+
 def pack(batch, sizes, batch_first=True):
     """Pack padded variables, provide reorder indexes.
 
@@ -80,9 +94,9 @@ def pad_and_pack(variables, size, *args, **kwargs):
     Args:
         tensors (list): Variable-length tensors.
     """
-    padded, sizes = zip(*[pad(v, size) for v in variables])
+    padded, sizes = pad_batch(variables, size)
 
-    return pack(torch.stack(padded), sizes, *args, **kwargs)
+    return pack(padded, sizes, *args, **kwargs)
 
 
 def sort_by_key(d, desc=False):
