@@ -25,14 +25,15 @@ class LazyVectors:
     def model(self):
         return KeyedVectors.load(self.path)
 
-    def __getitem__(self, key):
-        return self.model[key]
+    @property
+    def vocab_size(self):
+        return len(self.model.vocab)
 
-    def __contains__(self, key):
-        return key in self.model
+    @property
+    def vector_dim(self):
+        return self.model.vector_size
 
-    @cached_property
-    def weights(self):
+    def build_weights(self):
         """Prepend a zeros row for <UNK>.
         """
         unk = np.zeros(self.model.vector_size)

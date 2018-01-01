@@ -22,7 +22,7 @@ def checkpoint(root, key, model, epoch):
     torch.save(model, path)
 
 
-def pad(variable, size):
+def pad(variable, size, value):
     """Zero-pad a variable to given length on the right.
 
     Args:
@@ -41,14 +41,14 @@ def pad(variable, size):
     if var_size < size:
 
         padding = variable.data.new(size-var_size, *variable.size()[1:])
-        padding = padding.zero_()
+        padding = padding.zero_() + value
 
         variable = torch.cat([variable, Variable(padding)])
 
     return variable, var_size
 
 
-def pad_batch(variable, size):
+def pad_batch(variables, size, value):
     """Pad a batch of variables
 
     Args:
@@ -57,7 +57,7 @@ def pad_batch(variable, size):
 
     Returns: stacked tensor, sizes
     """
-    padded, sizes = zip(*[pad(v, size) for v in variables])
+    padded, sizes = zip(*[pad(v, size, value) for v in variables])
 
     return torch.stack(padded), sizes
 
@@ -88,15 +88,15 @@ def pack(batch, sizes, batch_first=True):
     return batch, reorder
 
 
-def pad_and_pack(variables, size, *args, **kwargs):
+def pad_and_pack(variables, pad_size, pad_val):
     """Pad a list of tensors to a given length, pack.
 
     Args:
         tensors (list): Variable-length tensors.
     """
-    padded, sizes = pad_batch(variables, size)
+    padded, sizes = pad_batch(variables, pad_size, pad_val)
 
-    return pack(padded, sizes, *args, **kwargs)
+    return pack(padded, sizes)
 
 
 def sort_by_key(d, desc=False):

@@ -74,16 +74,14 @@ class Batch:
 
     abstracts = attr.ib()
 
-    def packed_sentence_tensor(self, size=50):
-        """Pack sentence tensors.
+    def sentence_variables(self):
+        """Assemb.
         """
-        sents = [
+        return [
             Variable(s.tensor()).type(itype)
             for a in self.abstracts
             for s in a.sentences
         ]
-
-        return pad_and_pack(sents, size)
 
     def unpack_sentences(self, encoded):
         """Unpack encoded sentences.
@@ -132,21 +130,30 @@ class SentenceEncoder(nn.Module):
         """
         super().__init__()
 
-        weights = torch.from_numpy(vectors.weights)
+        self.embeddings = nn.Embedding(
+            vectors.vocab_size,
+            vectors.vector_dim,
+            padding_idx=-1,
+        )
 
-        self.embeddings = nn.Embedding(weights.shape[0], weights.shape[1])
+        self.lstm = nn.LSTM(
+            vectors.vector_dim,
+            lstm_dim,
+            bidirectional=True,
+            batch_first=True,
+        )
+
+    def init_embeddings(self):
+        """Initialize embeddings from pretrained vectors.
+        """
+        weights = torch.from_numpy(vectors.build_weights())
+
         self.embeddings.weight = nn.Parameter(weights)
 
-        self.lstm = nn.LSTM(weights.shape[1], lstm_dim, batch_first=True,
-            bidirectional=True)
-
-    def forward(self, x, reorder):
-
-        _, (hn, cn) = self.lstm(x)
-        # Cat forward + backward hidden layers.
-        out = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
-
-        return out[reorder]
+    def forward(self, sents):
+        """Map word indexes to embeddings, encode via LSTM.
+        """
+        pass
 
 
 class Encoder(nn.Module):
