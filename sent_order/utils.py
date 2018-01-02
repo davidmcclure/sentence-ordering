@@ -14,11 +14,11 @@ from torch.autograd import Variable
 from .cuda import ftype, itype
 
 
-def checkpoint(root, key, model, epoch):
+def checkpoint(root, key, model, epoch=0):
     """Save model checkpoint.
     """
     os.makedirs(root, exist_ok=True)
-    path = os.path.join(root, f'{key}.{epoch}.pt')
+    path = os.path.join(root, f'{key}.{epoch}.bin')
     torch.save(model, path)
 
 
