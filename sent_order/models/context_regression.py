@@ -146,9 +146,9 @@ class SentenceEncoder(nn.Module):
     def init_embeddings(self):
         """Initialize embeddings from pretrained vectors.
         """
-        weights = torch.from_numpy(vectors.build_weights())
+        weights = torch.from_numpy(vectors.build_weights()).type(ftype)
 
-        self.embeddings.weight = nn.Parameter(weights.float())
+        self.embeddings.weight = nn.Parameter(weights)
 
     def forward(self, sents):
         """Map word indexes to embeddings, encode via LSTM.
