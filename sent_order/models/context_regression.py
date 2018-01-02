@@ -21,7 +21,7 @@ from torch.autograd import Variable
 from torch.nn import functional as F
 
 from sent_order.cuda import ftype, itype
-from sent_order.utils import checkpoint, pad_and_pack, pad_batch, pack
+from sent_order.utils import checkpoint, pad_and_pack, pad_and_stack, pack
 from sent_order.vectors import LazyVectors
 
 
@@ -154,15 +154,15 @@ class SentenceEncoder(nn.Module):
         """Map word indexes to embeddings, encode via LSTM.
 
         Args:
-            sents (list of Variable): Variables of unpadded token indexes.
+            sents (list of Variable): Unpadded token indexes for each sentence.
         """
         # Pad token indexes.
-        padded, sizes = pad_batch(sents, 50, 0)
+        padded, sizes = pad_and_stack(sents, 50, 0)
 
         # Map to embeddings.
         embeds = self.embeddings(padded)
 
-        # Encode sentences.
+        # Pack + encode.
         packed, reorder = pack(embeds, sizes)
         _, (hn, _) = self.lstm(packed)
 
@@ -186,10 +186,15 @@ class ContextEncoder(nn.Module):
             batch_first=True,
         )
 
-    def forward(self, x, reorder):
+    def forward(self, contexts):
         """Pad, pack, encode, reorder.
+
+        Args:
+            contexts (list of Variable): Encoded sentences for each graf.
         """
-        _, (hn, cn) = self.lstm(x)
+        # Pad + encode.
+        x, reorder = pad_and_pack(contexts, 30, 0)
+        _, (hn, _) = self.lstm(x)
 
         # Cat forward + backward hidden layers.
         out = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
@@ -246,8 +251,7 @@ def train_batch(batch, sent_encoder, graf_encoder, regressor):
     grafs, sents, ys = zip(*examples)
 
     # Encode grafs.
-    grafs, reorder = pad_and_pack(grafs, 30)
-    grafs = graf_encoder(grafs, reorder)
+    grafs = graf_encoder(grafs)
 
     # <graf, sent, size>
     x = zip(grafs, sents)
@@ -266,7 +270,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     train = Corpus(train_path, train_skim)
 
     sent_encoder = SentenceEncoder(lstm_dim)
-    graf_encoder = Encoder(2*lstm_dim, lstm_dim)
+    graf_encoder = ContextEncoder(2*lstm_dim, lstm_dim)
     regressor = Regressor(4*lstm_dim, lin_dim)
 
     params = (
@@ -305,9 +309,9 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             epoch_loss += loss.data[0]
 
-        checkpoint(model_path, 'sent_encoder', sent_encoder, epoch)
-        checkpoint(model_path, 'graf_encoder', graf_encoder, epoch)
-        checkpoint(model_path, 'regressor', regressor, epoch)
+        # checkpoint(model_path, 'sent_encoder', sent_encoder, epoch)
+        # checkpoint(model_path, 'graf_encoder', graf_encoder, epoch)
+        # checkpoint(model_path, 'regressor', regressor, epoch)
 
         print(epoch_loss / epoch_size)
 

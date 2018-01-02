@@ -48,7 +48,7 @@ def pad(variable, size, value):
     return variable, var_size
 
 
-def pad_batch(variables, size, value):
+def pad_and_stack(variables, size, value):
     """Pad a batch of variables
 
     Args:
@@ -94,7 +94,7 @@ def pad_and_pack(variables, pad_size, pad_val):
     Args:
         tensors (list): Variable-length tensors.
     """
-    padded, sizes = pad_batch(variables, pad_size, pad_val)
+    padded, sizes = pad_and_stack(variables, pad_size, pad_val)
 
     return pack(padded, sizes)
 
