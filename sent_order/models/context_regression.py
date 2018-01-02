@@ -287,6 +287,9 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
         sent_encoder = sent_encoder.cuda()
         graf_encoder = graf_encoder.cuda()
         regressor = regressor.cuda()
+        loss_func = loss_func.cuda()
+
+    sent_encoder.init_embeddings()
 
     for epoch in range(epochs):
 
