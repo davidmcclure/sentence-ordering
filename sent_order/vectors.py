@@ -5,6 +5,7 @@ import numpy as np
 import os
 import attr
 
+from wordfreq import top_n_list
 from cached_property import cached_property
 from gensim.models import KeyedVectors
 
@@ -25,30 +26,61 @@ class LazyVectors:
     def model(self):
         return KeyedVectors.load(self.path)
 
+    @cached_property
+    def vocab(self):
+        """Get upper / lower versions of N most-frequent words.
+        """
+        topn = top_n_list('en', 100000)
+
+        vocab = []
+        for token in topn:
+
+            lower = token.lower()
+            upper = token.title()
+
+            if lower in self.model:
+                vocab.append(lower)
+
+            if upper in self.model and upper != lower:
+                vocab.append(upper)
+
+        return vocab
+
+    @cached_property
+    def vocab_index(self):
+        """Token -> index.
+        """
+        return {t: i for i, t in enumerate(self.vocab)}
+
     @property
     def vocab_size(self):
-        return len(self.model.vocab) + 2
+        return len(self.vocab) + 2
 
     @property
     def vector_dim(self):
         return self.model.vector_size
+
+    @cached_property
+    def syn0(self):
+        """Slice out embedding matrix for cropped vocab.
+        """
+        indexes = [self.model.vocab[t].index for t in self.vocab]
+
+        return self.model.syn0[indexes]
 
     def build_weights(self):
         """Prepend a zeros row for <UNK>.
         """
         zeros = np.zeros(self.vector_dim)
 
-        return np.vstack([
-            zeros, # padding
-            zeros, # UNK
-            self.model.syn0
-        ])
+        # Padding, <UNK>, vocab.
+        return np.vstack([zeros, zeros, self.syn0])
 
-    def token_index(self, token):
+    def weights_index(self, token):
         """Get the index of a word in the weights matrix.
         """
         return (
             # Since paddig / <UKN> are 0-1.
-            self.model.vocab[token].index + 2
-            if token in self.model.vocab else 1
+            self.vocab_index[token] + 2
+            if token in self.vocab_index else 1
         )

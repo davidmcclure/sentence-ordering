@@ -47,7 +47,7 @@ class Sentence:
         """Stack word vectors.
         """
         return torch.LongTensor([
-            vectors.token_index(t)
+            vectors.weights_index(t)
             for t in self.tokens
         ])
 
