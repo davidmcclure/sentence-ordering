@@ -13,7 +13,6 @@ from gensim.models import KeyedVectors
 
 
 VECTORS_PATH = os.path.join(os.path.dirname(__file__), 'data/vectors.bin')
-VOCAB_PATH = os.path.join(os.path.dirname(__file__), 'data/count_1w.txt')
 
 
 @attr.s
@@ -33,23 +32,7 @@ class LazyVectors:
     def vocab(self):
         """Get upper / lower versions of N most-frequent words.
         """
-        vocab = []
-        with open(VOCAB_PATH) as fh:
-
-            reader = csv.reader(fh, delimiter='\t')
-
-            for token, _ in reader:
-
-                lower = token.lower()
-                upper = token.title()
-
-                if lower in self.model:
-                    vocab.append(lower)
-
-                if upper in self.model and upper != lower:
-                    vocab.append(upper)
-
-        return vocab
+        return list(self.model.vocab.keys())
 
     @cached_property
     def vocab_index(self):
