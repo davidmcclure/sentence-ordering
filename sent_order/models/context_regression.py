@@ -238,7 +238,7 @@ def train_batch(batch, sent_encoder, graf_encoder, regressor):
 
             # Shuffle global context.
             perm = torch.randperm(len(ab)).type(itype)
-            graf = ab[perm]
+            graf = torch.cat([ab[i].unsqueeze(0), ab[perm]])
 
             # Paragraph length.
             size = Variable(torch.FloatTensor([len(ab)])).type(ftype)
@@ -329,7 +329,7 @@ def regress_sents(ab, graf_encoder, regressor):
 
         # Shuffle global context.
         perm = torch.randperm(len(ab)).type(itype)
-        graf = ab[perm]
+        graf = torch.cat([ab[i].unsqueeze(0), ab[perm]])
 
         # Paragraph length.
         size = Variable(torch.FloatTensor([len(ab)])).type(ftype)
