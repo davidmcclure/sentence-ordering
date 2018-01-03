@@ -30,7 +30,7 @@ class LazyVectors:
 
     @cached_property
     def vocab(self):
-        """Get upper / lower versions of N most-frequent words.
+        """Model vocabulary (possibly a subset)
         """
         return list(self.model.vocab.keys())
 
