@@ -4,13 +4,16 @@ import numpy as np
 
 import os
 import attr
+import csv
 
 from wordfreq import top_n_list
 from cached_property import cached_property
+from itertools import islice
 from gensim.models import KeyedVectors
 
 
 VECTORS_PATH = os.path.join(os.path.dirname(__file__), 'data/vectors.bin')
+VOCAB_PATH = os.path.join(os.path.dirname(__file__), 'data/count_1w.txt')
 
 
 @attr.s
@@ -30,19 +33,21 @@ class LazyVectors:
     def vocab(self):
         """Get upper / lower versions of N most-frequent words.
         """
-        topn = top_n_list('en', 100000)
-
         vocab = []
-        for token in topn:
+        with open(VOCAB_PATH) as fh:
 
-            lower = token.lower()
-            upper = token.title()
+            reader = csv.reader(fh, delimiter='\t')
 
-            if lower in self.model:
-                vocab.append(lower)
+            for token, _ in reader:
 
-            if upper in self.model and upper != lower:
-                vocab.append(upper)
+                lower = token.lower()
+                upper = token.title()
+
+                if lower in self.model:
+                    vocab.append(lower)
+
+                if upper in self.model and upper != lower:
+                    vocab.append(upper)
 
         return vocab
 
