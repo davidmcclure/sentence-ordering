@@ -69,6 +69,6 @@ class LazyVectors:
         """
         return (
             # Since paddig / <UKN> are 0-1.
-            self.vocab_index[token] + 2
+            self.vocab_index[token.lower()] + 2
             if token in self.vocab_index else 1
         )
