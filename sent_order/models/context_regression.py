@@ -197,19 +197,22 @@ def train_batch(batch, sent_encoder, graf_encoder, regressor):
             perm = torch.randperm(len(ab)).type(itype)
             graf = ab[perm]
 
+            # Paragraph length.
+            size = Variable(torch.FloatTensor([len(ab)])).type(ftype)
+
             # 0 <--> 1
             y = i / (len(ab)-1)
 
             # Graf, sentence, size, position.
-            examples.append((graf, ab[i], y))
+            examples.append((graf, ab[i], size, y))
 
-    grafs, sents, ys = zip(*examples)
+    grafs, sents, sizes, ys = zip(*examples)
 
     # Encode grafs.
     grafs = graf_encoder(grafs, 30)
 
     # <graf, sent, size>
-    x = zip(grafs, sents)
+    x = zip(grafs, sents, sizes)
     x = list(map(torch.cat, x))
     x = torch.stack(x)
 
@@ -226,7 +229,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     sent_encoder = Encoder(300, lstm_dim)
     graf_encoder = Encoder(2*lstm_dim, lstm_dim)
-    regressor = Regressor(4*lstm_dim, lin_dim)
+    regressor = Regressor(4*lstm_dim+1, lin_dim)
 
     params = (
         list(sent_encoder.parameters()) +
