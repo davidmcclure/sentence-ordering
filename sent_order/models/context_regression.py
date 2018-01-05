@@ -34,7 +34,9 @@ def read_abstracts(path):
     for path in glob(os.path.join(path, '*.json')):
         with open(path) as fh:
             for line in fh:
-                yield Abstract.from_line(line)
+                ab = Abstract.from_line(line)
+                if len(ab.sentences) == 5:
+                    yield ab
 
 
 @attr.s
