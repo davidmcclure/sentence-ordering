@@ -14,11 +14,11 @@ from torch.autograd import Variable
 from .cuda import ftype, itype
 
 
-def checkpoint(root, key, model, epoch):
+def checkpoint(root, key, model, epoch=0):
     """Save model checkpoint.
     """
     os.makedirs(root, exist_ok=True)
-    path = os.path.join(root, f'{key}.{epoch}.pt')
+    path = os.path.join(root, f'{key}.{epoch}.bin')
     torch.save(model, path)
 
 
@@ -48,6 +48,20 @@ def pad(variable, size):
     return variable, var_size
 
 
+def pad_and_stack(variables, size):
+    """Pad a batch of variables
+
+    Args:
+        variables (list of Variable)
+        size (int)
+
+    Returns: stacked tensor, sizes
+    """
+    padded, sizes = zip(*[pad(v, size) for v in variables])
+
+    return torch.stack(padded), sizes
+
+
 def pack(batch, sizes, batch_first=True):
     """Pack padded variables, provide reorder indexes.
 
@@ -74,19 +88,20 @@ def pack(batch, sizes, batch_first=True):
     return batch, reorder
 
 
-def pad_and_pack(variables, size, *args, **kwargs):
+def pad_and_pack(variables, pad_size):
     """Pad a list of tensors to a given length, pack.
 
     Args:
         tensors (list): Variable-length tensors.
     """
-    padded, sizes = zip(*[pad(v, size) for v in variables])
+    padded, sizes = pad_and_stack(variables, pad_size)
 
-    return pack(torch.stack(padded), sizes, *args, **kwargs)
+    return pack(padded, sizes)
 
 
 def sort_by_key(d, desc=False):
     """Sort dictionary by key.
     """
     items = sorted(d.items(), key=lambda x: x[0], reverse=desc)
+
     return OrderedDict(items)
