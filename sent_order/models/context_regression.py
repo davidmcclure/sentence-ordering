@@ -80,16 +80,14 @@ class Batch:
 
     abstracts = attr.ib()
 
-    def packed_sentence_tensor(self, size=50):
+    def sentence_variables(self, size=50):
         """Pack sentence tensors.
         """
-        sents = [
+        return [
             Variable(s.tensor()).type(ftype)
             for a in self.abstracts
             for s in a.sentences
         ]
-
-        return pad_and_pack(sents, size)
 
     def unpack_sentences(self, encoded):
         """Unpack encoded sentences.
@@ -134,14 +132,30 @@ class Corpus:
 class Encoder(nn.Module):
 
     def __init__(self, input_dim, lstm_dim):
+        """Initialize the LSTM.
+        """
         super().__init__()
-        self.lstm = nn.LSTM(input_dim, lstm_dim, batch_first=True,
-            bidirectional=True)
 
-    def forward(self, x, reorder):
-        _, (hn, cn) = self.lstm(x)
+        self.lstm = nn.LSTM(
+            input_dim,
+            lstm_dim,
+            bidirectional=True,
+            batch_first=True,
+        )
+
+    def forward(self, x, pad_size):
+        """Pad, pack, encode, reorder.
+
+        Args:
+            contexts (list of Variable): Encoded sentences for each graf.
+        """
+        # Pad, pack, encode.
+        x, reorder = pad_and_pack(x, pad_size)
+        _, (hn, _) = self.lstm(x)
+
         # Cat forward + backward hidden layers.
         out = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
+
         return out[reorder]
 
 
@@ -169,10 +183,10 @@ class Regressor(nn.Module):
 def train_batch(batch, sent_encoder, graf_encoder, regressor):
     """Train the batch.
     """
-    x, reorder = batch.packed_sentence_tensor()
+    sents = batch.sentence_variables()
 
     # Encode sentences.
-    sents = sent_encoder(x, reorder)
+    sents = sent_encoder(sents, 30)
 
     # Generate x / y pairs.
     examples = []
@@ -192,8 +206,7 @@ def train_batch(batch, sent_encoder, graf_encoder, regressor):
     grafs, sents, ys = zip(*examples)
 
     # Encode grafs.
-    grafs, reorder = pad_and_pack(grafs, 30)
-    grafs = graf_encoder(grafs, reorder)
+    grafs = graf_encoder(grafs, 30)
 
     # <graf, sent, size>
     x = zip(grafs, sents)
