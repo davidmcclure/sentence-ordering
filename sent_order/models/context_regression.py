@@ -28,14 +28,14 @@ from sent_order.utils import checkpoint, pad_and_pack
 vectors = LazyVectors.read()
 
 
-def read_abstracts(path):
+def read_abstracts(path, size=5):
     """Parse abstract JSON lines.
     """
     for path in glob(os.path.join(path, '*.json')):
         with open(path) as fh:
             for line in fh:
                 ab = Abstract.from_line(line)
-                if len(ab.sentences) == 5:
+                if len(ab.sentences) == size:
                     yield ab
 
 
@@ -182,7 +182,7 @@ class Regressor(nn.Module):
         return y.squeeze()
 
 
-def train_batch(batch, sent_encoder, graf_encoder, regressor):
+def train_batch(batch, sent_encoder, regressor):
     """Train the batch.
     """
     sents = batch.sentence_variables()
@@ -197,7 +197,7 @@ def train_batch(batch, sent_encoder, graf_encoder, regressor):
 
             # Shuffle global context.
             perm = torch.randperm(len(ab)).type(itype)
-            graf = ab[perm]
+            graf = ab[perm].view(-1)
 
             # Paragraph length.
             size = Variable(torch.FloatTensor([len(ab)])).type(ftype)
@@ -211,7 +211,7 @@ def train_batch(batch, sent_encoder, graf_encoder, regressor):
     grafs, sents, sizes, ys = zip(*examples)
 
     # Encode grafs.
-    grafs = graf_encoder(grafs, 30)
+    # grafs = graf_encoder(grafs, 30)
 
     # <graf, sent, size>
     x = zip(grafs, sents, sizes)
@@ -230,12 +230,12 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     train = Corpus(train_path, train_skim)
 
     sent_encoder = Encoder(300, lstm_dim)
-    graf_encoder = Encoder(2*lstm_dim, lstm_dim)
-    regressor = Regressor(4*lstm_dim+1, lin_dim)
+    # graf_encoder = Encoder(2*lstm_dim, lstm_dim)
+    regressor = Regressor(12*lstm_dim+1, lin_dim)
 
     params = (
         list(sent_encoder.parameters()) +
-        list(graf_encoder.parameters()) +
+        # list(graf_encoder.parameters()) +
         list(regressor.parameters())
     )
 
@@ -245,7 +245,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     if torch.cuda.is_available():
         sent_encoder = sent_encoder.cuda()
-        graf_encoder = graf_encoder.cuda()
+        # graf_encoder = graf_encoder.cuda()
         regressor = regressor.cuda()
 
     for epoch in range(epochs):
@@ -259,8 +259,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             batch = train.random_batch(batch_size)
 
-            y, y_pred = train_batch(batch, sent_encoder, \
-                    graf_encoder, regressor)
+            y, y_pred = train_batch(batch, sent_encoder, regressor)
 
             loss = loss_func(y_pred, y)
             loss.backward()
@@ -270,7 +269,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
             epoch_loss += loss.data[0]
 
         checkpoint(model_path, 'sent_encoder', sent_encoder, epoch)
-        checkpoint(model_path, 'graf_encoder', graf_encoder, epoch)
+        # checkpoint(model_path, 'graf_encoder', graf_encoder, epoch)
         checkpoint(model_path, 'regressor', regressor, epoch)
 
         print(epoch_loss / epoch_size)
