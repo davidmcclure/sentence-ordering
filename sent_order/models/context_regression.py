@@ -275,27 +275,24 @@ def regress_sents(ab, graf_encoder, regressor):
     """Regress sentences, get order.
     """
     # Generate x / y pairs.
+    # TODO: DRY
     examples = []
     for i in range(len(ab)):
 
         # Graf = sentence + context.
         perm = torch.randperm(len(ab)).type(itype)
-        graf = torch.cat([ab[i].unsqueeze(0), ab[perm]])
-
-        # Paragraph length.
-        size = Variable(torch.FloatTensor([len(ab)])).type(ftype)
+        graf = ab[perm]
 
         # Graf, sentence, size, position.
-        examples.append((graf, ab[i], size))
+        examples.append((graf, ab[i]))
 
-    grafs, sents, sizes = zip(*examples)
+    grafs, sents = zip(*examples)
 
     # Encode grafs.
-    grafs, reorder = pad_and_pack(grafs, 30)
-    grafs = graf_encoder(grafs, reorder)
+    grafs = graf_encoder(grafs, 30)
 
-    # <graf, sent, size>
-    x = zip(grafs, sents, sizes)
+    # Cat graf + sent.
+    x = zip(grafs, sents)
     x = list(map(torch.cat, x))
     x = torch.stack(x)
 
@@ -329,8 +326,9 @@ def predict(test_path, sent_encoder_path, graf_encoder_path, regressor_path,
         batch.shuffle()
 
         # Encode sentence batch.
-        sent_batch, reorder = batch.packed_sentence_tensor()
-        sent_batch = sent_encoder(sent_batch, reorder)
+        # TODO: DRY
+        sent_batch = batch.sentence_variables()
+        sent_batch = sent_encoder(sent_batch, 30)
 
         # Re-group by abstract.
         unpacked = batch.unpack_sentences(sent_batch)
