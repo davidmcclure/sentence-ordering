@@ -8,7 +8,6 @@ import torch
 import attr
 import random
 import ujson
-import math
 
 from tqdm import tqdm
 from itertools import islice
@@ -21,10 +20,10 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torch.autograd import Variable
 from torch.nn import functional as F
 
-from sent_order.utils import checkpoint, pad_and_pack
 from sent_order.vectors import LazyVectors
 from sent_order.cuda import ftype, itype
-from sent_order.perms import sample_perms
+from sent_order.utils import checkpoint, pad_and_pack
+from sent_order.perms import sample_uniform_perms
 
 
 vectors = LazyVectors.read()
@@ -42,6 +41,7 @@ def read_abstracts(path):
 @attr.s
 class Sentence:
 
+    position = attr.ib()
     tokens = attr.ib()
 
     def tensor(self, dim=300):
@@ -71,8 +71,8 @@ class Abstract:
         json = ujson.loads(line.strip())
 
         return cls([
-            Sentence(s['token'])
-            for s in json['sentences']
+            Sentence(i, s['token'])
+            for i, s in enumerate(json['sentences'])
         ])
 
 
@@ -81,16 +81,14 @@ class Batch:
 
     abstracts = attr.ib()
 
-    def packed_sentence_tensor(self, size=50):
+    def sentence_variables(self):
         """Pack sentence tensors.
         """
-        sents = [
+        return [
             Variable(s.tensor()).type(ftype)
             for a in self.abstracts
             for s in a.sentences
         ]
-
-        return pad_and_pack(sents, size)
 
     def unpack_sentences(self, encoded):
         """Unpack encoded sentences.
@@ -100,6 +98,12 @@ class Batch:
             end = start + len(ab.sentences)
             yield encoded[start:end]
             start = end
+
+    def shuffle(self):
+        """Shuffle sentences in all abstracts.
+        """
+        for ab in self.abstracts:
+            random.shuffle(ab.sentences)
 
 
 class Corpus:
@@ -119,43 +123,74 @@ class Corpus:
         """
         return Batch(random.sample(self.abstracts, size))
 
+    def batches(self, size):
+        """Iterate all batches.
+        """
+        for abstracts in chunked_iter(self.abstracts, size):
+            yield Batch(abstracts)
 
-class Encoder(nn.Module):
 
-    def __init__(self, input_dim, lstm_dim):
+class SentenceEncoder(nn.Module):
+
+    def __init__(self, embed_dim, lstm_dim):
+        """Initialize the LSTM.
+        """
         super().__init__()
-        self.lstm = nn.LSTM(input_dim, lstm_dim, batch_first=True,
-            bidirectional=True)
 
-    def forward(self, x, reorder):
+        self.lstm = nn.LSTM(
+            embed_dim,
+            lstm_dim,
+            bidirectional=True,
+            batch_first=True,
+        )
+
+    def forward(self, x, pad_size=30):
+        """Encode word embeddings as single sentence vector.
+
+        Args:
+            x (list of Variable): Encoded sentences for each graf.
+        """
+        # Pad, pack, encode.
+        x, reorder = pad_and_pack(x, pad_size)
         _, (hn, _) = self.lstm(x)
+
         # Cat forward + backward hidden layers.
         out = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
+
         return out[reorder]
 
 
 class Regressor(nn.Module):
 
     def __init__(self, lstm_dim, lin_dim):
-
+        """Initialize LSTM, linear layers.
+        """
         super().__init__()
 
-        self.lstm = nn.LSTM(lstm_dim, lstm_dim, batch_first=True,
-            bidirectional=True)
+        self.lstm = nn.LSTM(
+            lstm_dim,
+            lstm_dim,
+            bidirectional=True,
+            batch_first=True,
+        )
 
-        self.lin1 = nn.Linear(lstm_dim*2, lin_dim)
+        self.lin1 = nn.Linear(2*lstm_dim, lin_dim)
         self.lin2 = nn.Linear(lin_dim, lin_dim)
         self.lin3 = nn.Linear(lin_dim, lin_dim)
         self.lin4 = nn.Linear(lin_dim, lin_dim)
         self.lin5 = nn.Linear(lin_dim, lin_dim)
         self.out = nn.Linear(lin_dim, 1)
 
-    def forward(self, x):
-
+    def forward(self, x, pad_size=30):
+        """Encode sentences as a single paragraph vector, predict KT.
+        """
+        # Pad, pack, encode.
+        x, reorder = pad_and_pack(x, pad_size)
         _, (hn, _) = self.lstm(x)
 
         # Cat forward + backward hidden layers.
         y = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
+        y = y[reorder]
 
         y = F.relu(self.lin1(y))
         y = F.relu(self.lin2(y))
@@ -163,33 +198,29 @@ class Regressor(nn.Module):
         y = F.relu(self.lin4(y))
         y = F.relu(self.lin5(y))
         y = self.out(y)
-
         return y.squeeze()
 
 
 def train_batch(batch, sent_encoder, regressor):
     """Train the batch.
     """
-    x, reorder = batch.packed_sentence_tensor()
-
     # Encode sentences.
-    sents = sent_encoder(x, reorder)
+    sents = batch.sentence_variables()
+    sents = sent_encoder(sents)
 
     # Generate x / y pairs.
     x, y = [], []
     for ab in batch.unpack_sentences(sents):
 
-        dist = random.random()
+        perms, dists = sample_uniform_perms(len(ab))
 
-        for perm in sample_perms(len(ab), dist):
+        for perm, dist in zip(perms, dists):
 
-            perm = list(map(int, perm.tolist()))
+            perm = perm.tolist()
             perm = torch.LongTensor(perm).type(itype)
 
             x.append(ab[perm])
             y.append(dist)
-
-    x, reorder = pad_and_pack(x, 30)
 
     y = Variable(torch.FloatTensor(y)).type(ftype)
 
@@ -202,8 +233,8 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     """
     train = Corpus(train_path, train_skim)
 
-    sent_encoder = Encoder(300, lstm_dim)
-    regressor = Regressor(lstm_dim*2, lin_dim)
+    sent_encoder = SentenceEncoder(300, lstm_dim)
+    regressor = Regressor(2*lstm_dim, lin_dim)
 
     params = (
         list(sent_encoder.parameters()) +
@@ -212,7 +243,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
     optimizer = torch.optim.Adam(params, lr=lr)
 
-    loss_func = nn.L1Loss()
+    loss_func = nn.MSELoss()
 
     if torch.cuda.is_available():
         sent_encoder = sent_encoder.cuda()
@@ -223,7 +254,6 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
         print(f'\nEpoch {epoch}')
 
         epoch_loss = 0
-
         for _ in tqdm(range(epoch_size)):
 
             optimizer.zero_grad()
@@ -238,5 +268,8 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
             optimizer.step()
 
             epoch_loss += loss.data[0]
+
+        checkpoint(model_path, 'sent_encoder', sent_encoder, epoch)
+        checkpoint(model_path, 'regressor', regressor, epoch)
 
         print(epoch_loss / epoch_size)

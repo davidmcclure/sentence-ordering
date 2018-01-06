@@ -42,14 +42,19 @@ def max_perm_dist(size):
     """
     return int(per_mallows.maxi_dist(size)[0])
 
-
-def sample_perms(size, dist, n=10):
-    """Drawn N permutations at a uniformly selected KT distance.
-
-    Args:
-        size (int): Seq length.
-        dist (float): 0-1, where 0 is correct order, 1 is max perm dist.
+def sample_uniform_perms(size, maxn=10):
+    """Sample N perms, uniformly distributed across the (-1, 1) KT interval.
     """
-    dist = max_perm_dist(size) * dist
+    max_dist = max_perm_dist(size)
 
-    return rdist(n, size, dist)
+    # At most, 1 sample for each possible distance.
+    n = min(maxn, max_dist+1)
+
+    dists = np.linspace(0, max_dist, n, dtype=int)
+
+    perms = [
+        rdist(1, size, int(d))[0].astype(int)
+        for d in dists
+    ]
+
+    return perms, dists / max_dist
