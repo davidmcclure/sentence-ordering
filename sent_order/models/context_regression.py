@@ -284,9 +284,10 @@ def regress_sents(ab, graf_encoder, regressor):
     examples = []
     for i in range(len(ab)):
 
-        # Graf = sentence + context.
+        # Shuffle global context.
         perm = torch.randperm(len(ab)).type(itype)
-        graf = torch.cat([ab[i].unsqueeze(0), ab[perm]])
+        graf = ab[perm]
+        graf = torch.cat([graf, graf, graf])
 
         # Paragraph length.
         size = Variable(torch.FloatTensor([len(ab)])).type(ftype)
@@ -297,8 +298,7 @@ def regress_sents(ab, graf_encoder, regressor):
     grafs, sents, sizes = zip(*examples)
 
     # Encode grafs.
-    grafs, reorder = pad_and_pack(grafs, 30)
-    grafs = graf_encoder(grafs, reorder)
+    grafs = graf_encoder(grafs, 30)
 
     # <graf, sent, size>
     x = zip(grafs, sents, sizes)
@@ -335,8 +335,8 @@ def predict(test_path, sent_encoder_path, graf_encoder_path, regressor_path,
         batch.shuffle()
 
         # Encode sentence batch.
-        sent_batch, reorder = batch.packed_sentence_tensor()
-        sent_batch = sent_encoder(sent_batch, reorder)
+        sent_batch = batch.sentence_variables()
+        sent_batch = sent_encoder(sent_batch, 30)
 
         # Re-group by abstract.
         unpacked = batch.unpack_sentences(sent_batch)
