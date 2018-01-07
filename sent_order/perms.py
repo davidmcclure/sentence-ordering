@@ -11,7 +11,7 @@ per_mallows = importr('PerMallows')
 
 class RDist:
 
-    def __init__(self, gc_count=1000):
+    def __init__(self, gc_count=100):
         self.gc_count = gc_count
         self.calls = 0
 
@@ -41,6 +41,7 @@ def max_perm_dist(size):
     """Maximum KT distance for sequence of given size.
     """
     return int(per_mallows.maxi_dist(size)[0])
+
 
 def sample_uniform_perms(size, maxn=10):
     """Sample N perms, uniformly distributed across the (-1, 1) KT interval.
