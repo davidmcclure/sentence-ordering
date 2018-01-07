@@ -17,4 +17,5 @@ boltons
 textblob
 matplotlib
 click
+rpy2
 ujson
