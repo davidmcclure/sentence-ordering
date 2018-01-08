@@ -51,6 +51,6 @@ def sample_uniform_perms(size, maxn=10):
         for d in dists
     ]
 
-    kts = ((1 - dists / max_dist) * 2) - 1
+    kts = dists / max_dist
 
     return perms, kts
