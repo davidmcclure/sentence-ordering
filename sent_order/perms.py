@@ -11,7 +11,7 @@ per_mallows = importr('PerMallows')
 
 class RDist:
 
-    def __init__(self, gc_count=100):
+    def __init__(self, gc_count=1000):
         self.gc_count = gc_count
         self.calls = 0
 
@@ -59,3 +59,29 @@ def sample_uniform_perms(size, maxn=10):
     ]
 
     return perms, dists / max_dist
+
+
+def random_perm_at_dist(size, dist):
+    """Generate a random permutation at a given swap distance.
+    """
+    perm = list(range(size))
+
+    # Left indexes of correctly-ordered pairs.
+    ordered = set(range(size-1))
+
+    for _ in range(dist):
+
+        i1 = random.sample(ordered, 1)[0]
+        i2 = i1 + 1
+
+        perm[i1], perm[i2] = perm[i2], perm[i1]
+
+        ordered.remove(i1)
+
+        if i2+1 < len(perm) and perm[i2] < perm[i2+1]:
+            ordered.add(i2)
+
+        if i1 > 0 and perm[i1-1] < perm[i1]:
+            ordered.add(i1-1)
+
+    return perm
