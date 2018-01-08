@@ -212,15 +212,14 @@ def train_batch(batch, sent_encoder, regressor):
     x, y = [], []
     for ab in batch.unpack_sentences(sents):
 
-        perms, dists = sample_uniform_perms(len(ab))
+        perms, kts = sample_uniform_perms(len(ab))
 
-        for perm, dist in zip(perms, dists):
+        for perm, kt in zip(perms, kts):
 
-            perm = perm.tolist()
             perm = torch.LongTensor(perm).type(itype)
 
             x.append(ab[perm])
-            y.append(dist)
+            y.append(kt)
 
     y = Variable(torch.FloatTensor(y)).type(ftype)
 
