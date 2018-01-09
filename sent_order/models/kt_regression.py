@@ -78,14 +78,14 @@ class Paragraph:
 @attr.s
 class Batch:
 
-    abstracts = attr.ib()
+    grafs = attr.ib()
 
     def sentence_variables(self):
         """Pack sentence tensors.
         """
         return [
             Variable(s.tensor()).type(ftype)
-            for a in self.abstracts
+            for a in self.grafs
             for s in a.sentences
         ]
 
@@ -93,15 +93,15 @@ class Batch:
         """Unpack encoded sentences.
         """
         start = 0
-        for ab in self.abstracts:
+        for ab in self.grafs:
             end = start + len(ab.sentences)
             yield encoded[start:end]
             start = end
 
     def shuffle(self):
-        """Shuffle sentences in all abstracts.
+        """Shuffle sentences in all grafs.
         """
-        for ab in self.abstracts:
+        for ab in self.grafs:
             random.shuffle(ab.sentences)
 
 
@@ -197,6 +197,7 @@ class Regressor(nn.Module):
         y = F.relu(self.lin4(y))
         y = F.relu(self.lin5(y))
         y = self.out(y)
+
         return y.squeeze()
 
 
