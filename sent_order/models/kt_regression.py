@@ -34,12 +34,11 @@ class Sentence:
 
     tokens = attr.ib()
 
-    # TODO: vectors.dim
-    def tensor(self, dim=300):
+    def tensor(self):
         """Stack word vectors.
         """
         x = [
-            vectors[t] if t in vectors else np.zeros(dim)
+            vectors[t] if t in vectors else np.zeros(vectors.dim)
             for t in self.tokens
         ]
 

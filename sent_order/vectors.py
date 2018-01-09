@@ -23,6 +23,10 @@ class LazyVectors:
     def model(self):
         return KeyedVectors.load(self.path)
 
+    @property
+    def dim(self):
+        return self.model.vector_size
+
     def __getitem__(self, key):
         return self.model[key]
 
