@@ -73,6 +73,12 @@ class Paragraph:
             for s in json['sentences']
         ])
 
+    def sentence_variables(self):
+        """Gather sentence tensors.
+        """
+        for s in self.sentences:
+            yield Variable(s.tensor()).type(ftype)
+
 
 @attr.s
 class Batch:
@@ -82,11 +88,8 @@ class Batch:
     def sentence_variables(self):
         """Pack sentence tensors.
         """
-        return [
-            Variable(s.tensor()).type(ftype)
-            for a in self.grafs
-            for s in a.sentences
-        ]
+        for g in self.grafs:
+            yield from g.sentence_variables()
 
     def unpack_sentences(self, encoded):
         """Unpack encoded sentences.
