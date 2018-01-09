@@ -29,21 +29,12 @@ from sent_order.perms import sample_uniform_perms
 vectors = LazyVectors.read()
 
 
-def read_abstracts(path):
-    """Parse abstract JSON lines.
-    """
-    for path in glob(os.path.join(path, '*.json')):
-        with open(path) as fh:
-            for line in fh:
-                yield Abstract.from_line(line)
-
-
 @attr.s
 class Sentence:
 
-    position = attr.ib()
     tokens = attr.ib()
 
+    # TODO: vectors.dim
     def tensor(self, dim=300):
         """Stack word vectors.
         """
@@ -60,19 +51,27 @@ class Sentence:
 
 
 @attr.s
-class Abstract:
+class Paragraph:
 
     sentences = attr.ib()
 
     @classmethod
-    def from_line(cls, line):
+    def read_arxiv(cls, path):
+        """Wrap parsed arXiv abstracts as paragraphs.
+        """
+        for path in glob(os.path.join(path, '*.json')):
+            for line in open(path):
+                yield cls.from_arxiv_json(line)
+
+    @classmethod
+    def from_arxiv_json(cls, line):
         """Parse JSON, take tokens.
         """
         json = ujson.loads(line.strip())
 
         return cls([
-            Sentence(i, s['token'])
-            for i, s in enumerate(json['sentences'])
+            Sentence(s['token'])
+            for s in json['sentences']
         ])
 
 
@@ -109,25 +108,25 @@ class Batch:
 class Corpus:
 
     def __init__(self, path, skim=None):
-        """Load abstracts into memory.
+        """Load grafs into memory.
         """
-        reader = read_abstracts(path)
+        reader = Paragraph.read_arxiv(path)
 
         if skim:
             reader = islice(reader, skim)
 
-        self.abstracts = list(tqdm(reader, total=skim))
+        self.grafs = list(tqdm(reader, total=skim))
 
     def random_batch(self, size):
         """Query random batch.
         """
-        return Batch(random.sample(self.abstracts, size))
+        return Batch(random.sample(self.grafs, size))
 
     def batches(self, size):
         """Iterate all batches.
         """
-        for abstracts in chunked_iter(self.abstracts, size):
-            yield Batch(abstracts)
+        for grafs in chunked_iter(self.grafs, size):
+            yield Batch(grafs)
 
 
 class SentenceEncoder(nn.Module):
