@@ -216,6 +216,9 @@ def train_batch(batch, sent_encoder, regressor):
 
         perms, kts = sample_uniform_perms(len(ab))
 
+        # Squeeze middle KTS towards 0.
+        kts = kts**3
+
         for perm, kt in zip(perms, kts):
 
             perm = torch.LongTensor(perm).type(itype)
