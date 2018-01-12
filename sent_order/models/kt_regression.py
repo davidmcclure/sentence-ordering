@@ -22,7 +22,7 @@ from torch.nn import functional as F
 
 from sent_order.vectors import LazyVectors
 from sent_order.cuda import ftype, itype
-from sent_order.utils import checkpoint, pad_and_pack
+from sent_order.utils import checkpoint, pad_and_pack, pad_and_stack
 from sent_order.perms import sample_uniform_perms
 
 
@@ -161,46 +161,70 @@ class SentenceEncoder(nn.Module):
         return out[reorder]
 
 
+# class Regressor(nn.Module):
+
+    # def __init__(self, lstm_dim, lin_dim):
+        # """Initialize LSTM, linear layers.
+        # """
+        # super().__init__()
+
+        # self.lstm = nn.LSTM(
+            # lstm_dim,
+            # lstm_dim,
+            # bidirectional=True,
+            # batch_first=True,
+        # )
+
+        # self.lin1 = nn.Linear(2*lstm_dim, lin_dim)
+        # self.lin2 = nn.Linear(lin_dim, lin_dim)
+        # self.lin3 = nn.Linear(lin_dim, lin_dim)
+        # self.lin4 = nn.Linear(lin_dim, lin_dim)
+        # self.lin5 = nn.Linear(lin_dim, lin_dim)
+        # self.out = nn.Linear(lin_dim, 1)
+
+    # def forward(self, x, pad_size=30):
+        # """Encode sentences as a single paragraph vector, predict KT.
+        # """
+        # # Pad, pack, encode.
+        # x, reorder = pad_and_pack(x, pad_size)
+        # _, (hn, _) = self.lstm(x)
+
+        # # Cat forward + backward hidden layers.
+        # y = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
+        # y = y[reorder]
+
+        # y = F.relu(self.lin1(y))
+        # y = F.relu(self.lin2(y))
+        # y = F.relu(self.lin3(y))
+        # y = F.relu(self.lin4(y))
+        # y = F.relu(self.lin5(y))
+        # y = self.out(y)
+
+        # return y.squeeze()
+
+
 class Regressor(nn.Module):
 
-    def __init__(self, lstm_dim, lin_dim):
-        """Initialize LSTM, linear layers.
-        """
+    def __init__(self, input_dim, lin_dim):
         super().__init__()
+        self.conv1 = nn.Conv1d(input_dim, 1000, 2)
+        self.conv2 = nn.Conv1d(1000, 500, 2)
+        self.mp = nn.MaxPool1d(2)
+        self.out = nn.Linear(3000, 1)
 
-        self.lstm = nn.LSTM(
-            lstm_dim,
-            lstm_dim,
-            bidirectional=True,
-            batch_first=True,
-        )
-
-        self.lin1 = nn.Linear(2*lstm_dim, lin_dim)
-        self.lin2 = nn.Linear(lin_dim, lin_dim)
-        self.lin3 = nn.Linear(lin_dim, lin_dim)
-        self.lin4 = nn.Linear(lin_dim, lin_dim)
-        self.lin5 = nn.Linear(lin_dim, lin_dim)
-        self.out = nn.Linear(lin_dim, 1)
 
     def forward(self, x, pad_size=30):
         """Encode sentences as a single paragraph vector, predict KT.
         """
         # Pad, pack, encode.
-        x, reorder = pad_and_pack(x, pad_size)
-        _, (hn, _) = self.lstm(x)
+        x, _ = pad_and_stack(x, pad_size)
+        x = x.transpose(1, 2)
 
-        # Cat forward + backward hidden layers.
-        y = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
-        y = y[reorder]
+        x = F.relu(self.mp(self.conv1(x)))
+        x = F.relu(self.mp(self.conv2(x)))
+        x = x.view(len(x), -1)
 
-        y = F.relu(self.lin1(y))
-        y = F.relu(self.lin2(y))
-        y = F.relu(self.lin3(y))
-        y = F.relu(self.lin4(y))
-        y = F.relu(self.lin5(y))
-        y = self.out(y)
-
-        return y.squeeze()
+        return self.out(x)
 
 
 def train_batch(batch, sent_encoder, regressor):
