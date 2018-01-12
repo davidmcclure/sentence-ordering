@@ -79,6 +79,21 @@ class Paragraph:
         for s in self.sentences:
             yield s.variable()
 
+    def perm_variable(self, perm):
+        """Stack word vectors.
+        """
+        x = [
+            vectors[t] if t in vectors else np.zeros(vectors.dim)
+            for i in perm
+            for t in self.sentences[i].tokens
+        ]
+
+        x = np.array(x)
+        x = torch.from_numpy(x)
+        x = x.float()
+
+        return Variable(x).type(ftype)
+
 
 @attr.s
 class Batch:
@@ -169,7 +184,7 @@ class Regressor(nn.Module):
         super().__init__()
 
         self.lstm = nn.LSTM(
-            lstm_dim,
+            300,
             lstm_dim,
             bidirectional=True,
             batch_first=True,
@@ -182,7 +197,7 @@ class Regressor(nn.Module):
         self.lin5 = nn.Linear(lin_dim, lin_dim)
         self.out = nn.Linear(lin_dim, 1)
 
-    def forward(self, x, pad_size=30):
+    def forward(self, x, pad_size=300):
         """Encode sentences as a single paragraph vector, predict KT.
         """
         # Pad, pack, encode.
@@ -203,27 +218,17 @@ class Regressor(nn.Module):
         return y.squeeze()
 
 
-def train_batch(batch, sent_encoder, regressor):
+def train_batch(batch, regressor):
     """Train the batch.
     """
-    # Encode sentences.
-    sents = batch.sentence_variables()
-    sents = sent_encoder(sents)
-
     # Generate x / y pairs.
     x, y = [], []
-    for ab in batch.unpack_sentences(sents):
+    for graf in batch.grafs:
 
-        perms, kts = sample_uniform_perms(len(ab))
-
-        # Squeeze middle KTS towards 0.
-        kts = kts**3
+        perms, kts = sample_uniform_perms(len(graf.sentences))
 
         for perm, kt in zip(perms, kts):
-
-            perm = torch.LongTensor(perm).type(itype)
-
-            x.append(ab[perm])
+            x.append(graf.perm_variable(perm))
             y.append(kt)
 
     y = Variable(torch.FloatTensor(y)).type(ftype)
@@ -237,11 +242,11 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     """
     train = Corpus(train_path, train_skim)
 
-    sent_encoder = SentenceEncoder(300, lstm_dim)
-    regressor = Regressor(2*lstm_dim, lin_dim)
+    # sent_encoder = SentenceEncoder(300, lstm_dim)
+    regressor = Regressor(lstm_dim, lin_dim)
 
     params = (
-        list(sent_encoder.parameters()) +
+        # list(sent_encoder.parameters()) +
         list(regressor.parameters())
     )
 
@@ -264,7 +269,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             batch = train.random_batch(batch_size)
 
-            y_pred, y = train_batch(batch, sent_encoder, regressor)
+            y_pred, y = train_batch(batch, regressor)
 
             loss = loss_func(y_pred, y)
             loss.backward()
