@@ -55,12 +55,16 @@ class Paragraph:
     sentences = attr.ib()
 
     @classmethod
-    def read_arxiv(cls, path):
+    def read_arxiv(cls, path, size=None):
         """Wrap parsed arXiv abstracts as paragraphs.
         """
         for path in glob(os.path.join(path, '*.json')):
             for line in open(path):
-                yield cls.from_arxiv_json(line)
+
+                graf = cls.from_arxiv_json(line)
+
+                if not size or len(graf.sentences) == size:
+                    yield graf
 
     @classmethod
     def from_arxiv_json(cls, line):
@@ -109,15 +113,15 @@ class Batch:
 
 class Corpus:
 
-    def __init__(self, path, skim=None):
+    def __init__(self, path, count=None, size=None):
         """Load grafs into memory.
         """
-        reader = Paragraph.read_arxiv(path)
+        reader = Paragraph.read_arxiv(path, size)
 
-        if skim:
-            reader = islice(reader, skim)
+        if count:
+            reader = islice(reader, count)
 
-        self.grafs = list(tqdm(reader, total=skim))
+        self.grafs = list(tqdm(reader, total=count))
 
     def random_batch(self, size):
         """Query random batch.
@@ -161,70 +165,46 @@ class SentenceEncoder(nn.Module):
         return out[reorder]
 
 
-# class Regressor(nn.Module):
-
-    # def __init__(self, lstm_dim, lin_dim):
-        # """Initialize LSTM, linear layers.
-        # """
-        # super().__init__()
-
-        # self.lstm = nn.LSTM(
-            # lstm_dim,
-            # lstm_dim,
-            # bidirectional=True,
-            # batch_first=True,
-        # )
-
-        # self.lin1 = nn.Linear(2*lstm_dim, lin_dim)
-        # self.lin2 = nn.Linear(lin_dim, lin_dim)
-        # self.lin3 = nn.Linear(lin_dim, lin_dim)
-        # self.lin4 = nn.Linear(lin_dim, lin_dim)
-        # self.lin5 = nn.Linear(lin_dim, lin_dim)
-        # self.out = nn.Linear(lin_dim, 1)
-
-    # def forward(self, x, pad_size=30):
-        # """Encode sentences as a single paragraph vector, predict KT.
-        # """
-        # # Pad, pack, encode.
-        # x, reorder = pad_and_pack(x, pad_size)
-        # _, (hn, _) = self.lstm(x)
-
-        # # Cat forward + backward hidden layers.
-        # y = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
-        # y = y[reorder]
-
-        # y = F.relu(self.lin1(y))
-        # y = F.relu(self.lin2(y))
-        # y = F.relu(self.lin3(y))
-        # y = F.relu(self.lin4(y))
-        # y = F.relu(self.lin5(y))
-        # y = self.out(y)
-
-        # return y.squeeze()
-
-
 class Regressor(nn.Module):
 
-    def __init__(self, input_dim, lin_dim):
+    def __init__(self, lstm_dim, lin_dim):
+        """Initialize LSTM, linear layers.
+        """
         super().__init__()
-        self.conv1 = nn.Conv1d(input_dim, 1000, 2)
-        self.conv2 = nn.Conv1d(1000, 500, 2)
-        self.mp = nn.MaxPool1d(2)
-        self.out = nn.Linear(3000, 1)
 
+        self.lstm = nn.LSTM(
+            lstm_dim,
+            lstm_dim,
+            bidirectional=True,
+            batch_first=True,
+        )
+
+        self.lin1 = nn.Linear(2*lstm_dim, lin_dim)
+        self.lin2 = nn.Linear(lin_dim, lin_dim)
+        self.lin3 = nn.Linear(lin_dim, lin_dim)
+        self.lin4 = nn.Linear(lin_dim, lin_dim)
+        self.lin5 = nn.Linear(lin_dim, lin_dim)
+        self.out = nn.Linear(lin_dim, 1)
 
     def forward(self, x, pad_size=30):
         """Encode sentences as a single paragraph vector, predict KT.
         """
         # Pad, pack, encode.
-        x, _ = pad_and_stack(x, pad_size)
-        x = x.transpose(1, 2)
+        x, reorder = pad_and_pack(x, pad_size)
+        _, (hn, _) = self.lstm(x)
 
-        x = F.relu(self.mp(self.conv1(x)))
-        x = F.relu(self.mp(self.conv2(x)))
-        x = x.view(len(x), -1)
+        # Cat forward + backward hidden layers.
+        y = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
+        y = y[reorder]
 
-        return self.out(x)
+        y = F.relu(self.lin1(y))
+        y = F.relu(self.lin2(y))
+        y = F.relu(self.lin3(y))
+        y = F.relu(self.lin4(y))
+        y = F.relu(self.lin5(y))
+        y = self.out(y)
+
+        return y.squeeze()
 
 
 def train_batch(batch, sent_encoder, regressor):
@@ -259,7 +239,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     batch_size, lstm_dim, lin_dim):
     """Train model.
     """
-    train = Corpus(train_path, train_skim)
+    train = Corpus(train_path, train_skim, 5)
 
     sent_encoder = SentenceEncoder(300, lstm_dim)
     regressor = Regressor(2*lstm_dim, lin_dim)
