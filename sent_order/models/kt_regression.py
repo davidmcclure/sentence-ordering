@@ -255,7 +255,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
     loss_func = nn.MSELoss()
 
     if torch.cuda.is_available():
-        sent_encoder = sent_encoder.cuda()
+        # sent_encoder = sent_encoder.cuda()
         regressor = regressor.cuda()
 
     for epoch in range(epochs):
