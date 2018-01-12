@@ -278,7 +278,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             epoch_loss += loss.data[0]
 
-        checkpoint(model_path, 'sent_encoder', sent_encoder, epoch)
+        # checkpoint(model_path, 'sent_encoder', sent_encoder, epoch)
         checkpoint(model_path, 'regressor', regressor, epoch)
 
         print(epoch_loss / epoch_size)
