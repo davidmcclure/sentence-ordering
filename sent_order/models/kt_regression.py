@@ -34,7 +34,7 @@ class Sentence:
 
     tokens = attr.ib()
 
-    def tensor(self):
+    def variable(self):
         """Stack word vectors.
         """
         x = [
@@ -46,7 +46,7 @@ class Sentence:
         x = torch.from_numpy(x)
         x = x.float()
 
-        return x
+        return Variable(x).type(ftype)
 
 
 @attr.s
@@ -77,7 +77,7 @@ class Paragraph:
         """Gather sentence tensors.
         """
         for s in self.sentences:
-            yield Variable(s.tensor()).type(ftype)
+            yield s.variable()
 
 
 @attr.s

@@ -19,3 +19,5 @@ matplotlib
 click
 rpy2
 ujson
+pandas
+annoy
