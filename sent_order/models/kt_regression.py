@@ -175,7 +175,7 @@ class Regressor(nn.Module):
             batch_first=True,
         )
 
-        self.lin1 = nn.Linear(2*lstm_dim, lin_dim)
+        self.lin1 = nn.Linear(4*lstm_dim, lin_dim)
         self.lin2 = nn.Linear(lin_dim, lin_dim)
         self.lin3 = nn.Linear(lin_dim, lin_dim)
         self.lin4 = nn.Linear(lin_dim, lin_dim)
@@ -186,12 +186,18 @@ class Regressor(nn.Module):
         """Encode sentences as a single paragraph vector, predict KT.
         """
         # Pad, pack, encode.
-        x, reorder = pad_and_pack(x, pad_size)
-        _, (hn, _) = self.lstm(x)
+        packed, reorder = pad_and_pack(x, pad_size)
+        _, (hn, _) = self.lstm(packed)
 
         # Cat forward + backward hidden layers.
         y = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
         y = y[reorder]
+
+        first = torch.stack([ab[0] for ab in x])
+        last = torch.stack([ab[-1] for ab in x])
+
+        # Include first / last sentences as residual connections.
+        y = torch.cat([y, first, last], 1)
 
         y = F.relu(self.lin1(y))
         y = F.relu(self.lin2(y))
