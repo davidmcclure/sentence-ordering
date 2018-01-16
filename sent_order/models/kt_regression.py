@@ -175,7 +175,7 @@ class Regressor(nn.Module):
             batch_first=True,
         )
 
-        self.lin1 = nn.Linear(4*lstm_dim, lin_dim)
+        self.lin1 = nn.Linear(2*lstm_dim, lin_dim)
         self.lin2 = nn.Linear(lin_dim, lin_dim)
         self.lin3 = nn.Linear(lin_dim, lin_dim)
         self.lin4 = nn.Linear(lin_dim, lin_dim)
@@ -192,12 +192,6 @@ class Regressor(nn.Module):
         # Cat forward + backward hidden layers.
         y = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
         y = y[reorder]
-
-        first = torch.stack([ab[0] for ab in x])
-        last = torch.stack([ab[-1] for ab in x])
-
-        # Include first / last sentences as residual connections.
-        y = torch.cat([y, first, last], 1)
 
         y = F.relu(self.lin1(y))
         y = F.relu(self.lin2(y))
@@ -260,7 +254,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
         print(f'\nEpoch {epoch}')
 
-        epoch_loss = 0
+        epoch_loss, l1_loss = 0, 0
         for _ in tqdm(range(epoch_size)):
 
             optimizer.zero_grad()
@@ -269,14 +263,25 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
             y_pred, y = train_batch(batch, sent_encoder, regressor)
 
-            loss = loss_func(y_pred, y)
+            loss = ((y - y_pred) ** 2) * (1 + 5 * y**2)
+            loss = loss.mean()
+
             loss.backward()
 
             optimizer.step()
 
             epoch_loss += loss.data[0]
+            l1_loss += (y - y_pred).abs().mean().data[0]
 
         checkpoint(model_path, 'sent_encoder', sent_encoder, epoch)
         checkpoint(model_path, 'regressor', regressor, epoch)
 
+        # Loss.
         print(epoch_loss / epoch_size)
+
+        # L1 loss.
+        print(l1_loss / epoch_size)
+
+        # First example.
+        stop = y[1:].max(0)[1].data[0] + 1
+        print(y[:stop], y_pred[:stop])
