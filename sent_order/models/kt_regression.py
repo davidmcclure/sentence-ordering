@@ -280,7 +280,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
         print(epoch_loss / epoch_size)
 
         # L1 error.
-        print(l1_loss / epoch_size)
+        print(l1_error / epoch_size)
 
         # First example.
         print(y[:10], y_pred[:10])
