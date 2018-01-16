@@ -254,7 +254,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
 
         print(f'\nEpoch {epoch}')
 
-        epoch_loss, l1_loss = 0, 0
+        epoch_loss, l1_error = 0, 0
         for _ in tqdm(range(epoch_size)):
 
             optimizer.zero_grad()
@@ -271,7 +271,7 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
             optimizer.step()
 
             epoch_loss += loss.data[0]
-            l1_loss += (y - y_pred).abs().mean().data[0]
+            l1_error += (y - y_pred).abs().mean().data[0]
 
         checkpoint(model_path, 'sent_encoder', sent_encoder, epoch)
         checkpoint(model_path, 'regressor', regressor, epoch)
@@ -279,9 +279,8 @@ def train(train_path, model_path, train_skim, lr, epochs, epoch_size,
         # Loss.
         print(epoch_loss / epoch_size)
 
-        # L1 loss.
+        # L1 error.
         print(l1_loss / epoch_size)
 
         # First example.
-        stop = y[1:].max(0)[1].data[0] + 1
-        print(y[:stop], y_pred[:stop])
+        print(y[:10], y_pred[:10])
