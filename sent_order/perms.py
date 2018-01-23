@@ -1,6 +1,8 @@
 
 
 import numpy as np
+
+import math
 import random
 
 
@@ -36,15 +38,17 @@ def random_perm_at_dist(size, dist):
     return perm
 
 
-def sample_uniform_perms(size, maxn=10):
-    """Sample N perms, uniformly distributed across the (-1, 1) KT interval.
+def sample_uniform_perms(size, skim=0.25, maxn=10):
+    """Sample N perms, uniformly distributed across a skimmed KT interval.
     """
     max_dist = max_perm_dist(size)
+
+    max_sample_dist = math.ceil(max_dist * skim)
 
     # At most, 1 sample for each possible distance.
     n = min(maxn, max_dist+1)
 
-    dists = np.linspace(0, max_dist, n, dtype=int)
+    dists = np.linspace(0, max_sample_dist, maxn, dtype=int).round()
 
     perms = [
         random_perm_at_dist(size, int(d))
@@ -52,8 +56,5 @@ def sample_uniform_perms(size, maxn=10):
     ]
 
     kts = dists / max_dist
-
-    # -1 <-> 1
-    kts = (1-kts)*2-1
 
     return perms, kts
