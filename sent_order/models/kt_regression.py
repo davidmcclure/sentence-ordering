@@ -23,7 +23,7 @@ from torch.nn import functional as F
 from sent_order.vectors import LazyVectors
 from sent_order.cuda import ftype, itype
 from sent_order.utils import checkpoint, pad_and_pack
-from sent_order.perms import sample_uniform_perms
+from sent_order.perms import sample_perms_at_dist
 
 
 vectors = LazyVectors.read()
@@ -214,9 +214,9 @@ def train_batch(batch, sent_encoder, regressor):
     x, y = [], []
     for ab in batch.unpack_sentences(sents):
 
-        perms, kts = sample_uniform_perms(len(ab))
+        perms, kt = sample_perms_at_dist(len(ab), random.random())
 
-        for perm, kt in zip(perms, kts):
+        for perm in perms:
 
             perm = torch.LongTensor(perm).type(itype)
 

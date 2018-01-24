@@ -35,7 +35,7 @@ def random_perm_at_dist(size, dist):
         if i1 > 0 and perm[i1-1] < perm[i1]:
             ordered.add(i1-1)
 
-    return perm
+    return tuple(perm)
 
 
 def sample_uniform_perms(size, skim=0.25, maxn=10):
@@ -58,3 +58,20 @@ def sample_uniform_perms(size, skim=0.25, maxn=10):
     kts = dists / max_dist
 
     return perms, kts
+
+
+def sample_perms_at_dist(size, offset, maxn=10):
+    """Sample N perms at a given KT ratio offset.
+    """
+    max_dist = max_perm_dist(size)
+
+    sample_dist = round(max_dist * offset)
+
+    perms = [
+        random_perm_at_dist(size, sample_dist)
+        for _ in range(maxn)
+    ]
+
+    kt = sample_dist / max_dist
+
+    return set(perms), kt
