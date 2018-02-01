@@ -21,3 +21,4 @@ rpy2
 ujson
 pandas
 annoy
+torchtext
