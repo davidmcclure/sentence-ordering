@@ -6,9 +6,6 @@ import os
 from contextlib import contextmanager
 
 
-CUDA = bool(os.environ.get('CUDA'))
-
-
 if torch.cuda.is_available():
     itype = torch.cuda.LongTensor
     ftype = torch.cuda.FloatTensor
