@@ -97,7 +97,7 @@ ENV/
 /site
 
 /data
+/pytorch
 *.pt
-
-.DS_Store
 .vector_cache
+.DS_Store
