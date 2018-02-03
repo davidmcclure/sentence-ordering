@@ -80,9 +80,12 @@ class Paragraph:
             for s in json['sentences']
         ])
 
-    def indexes(self, perm=None):
+    def index_var_1d(self, perm=None):
+        """Token indexes, flattened to 1d series.
+        """
         perm = perm or range(len(self.sents))
-        return [ti for si in perm for ti in self.sents[si].indexes]
+        indexes = [ti for si in perm for ti in self.sents[si].indexes]
+        return Variable(torch.LongTensor(indexes))
 
 
 class Corpus:
