@@ -160,6 +160,7 @@ class Regressor(nn.Module):
         )
 
         self.embeddings.weight.data.copy_(VECTORS.vectors)
+        self.embeddings.requires_grad = False
 
         self.convs = nn.ModuleList([
             nn.Conv3d(1, 100, (1, n, VECTORS.vectors.shape[1]))
@@ -217,7 +218,9 @@ class Model:
         """
         self.regressor.train(True)
 
-        optimizer = torch.optim.Adam(self.regressor.parameters(), lr=lr)
+        params = [p for p in self.regressor.parameters() if p.requires_grad]
+
+        optimizer = torch.optim.Adam(params, lr=lr)
 
         for epoch in range(epochs):
 
