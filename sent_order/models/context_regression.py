@@ -183,7 +183,9 @@ class Regressor(nn.Module):
 
         self.dropout = nn.Dropout()
 
-        self.out = nn.Linear(5*500*6, 5)
+        self.fc1 = nn.Linear(5*500*6, 500)
+        self.fc2 = nn.Linear(500, 500)
+        self.fc3 = nn.Linear(500, 5)
 
     def forward(self, x):
 
@@ -208,7 +210,10 @@ class Regressor(nn.Module):
 
         x = self.dropout(x)
 
-        return self.out(x)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+
+        return self.fc3(x)
 
 
 class Model:
