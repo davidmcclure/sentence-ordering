@@ -267,8 +267,8 @@ class Model:
                 epoch_loss += loss.data[0]
 
                 for t, p in zip(yt, yp):
-                    t = np.argsort(t.data)
-                    p = np.argsort(p.data)
+                    t = np.argsort(list(t.data))
+                    p = np.argsort(list(p.data))
                     kt = kendalltau(t, p)
                     kts.append(kt.correlation)
 
