@@ -160,13 +160,13 @@ class Regressor(nn.Module):
         self.embeddings.weight.data.copy_(VECTORS.vectors)
 
         self.convs = nn.ModuleList([
-            nn.Conv3d(1, 500, (1, n, VECTORS.vectors.shape[1]))
-            for n in range(1, 10)
+            nn.Conv3d(1, 100, (1, n, VECTORS.vectors.shape[1]))
+            for n in range(1, 6)
         ])
 
         self.dropout = nn.Dropout()
 
-        self.out = nn.Linear(9*500*6, 5)
+        self.out = nn.Linear(5*100*6, 5)
 
     def forward(self, x):
 
@@ -203,7 +203,7 @@ class Model:
     def regressor(self):
         return Regressor()
 
-    def train(self, epochs=10, epoch_size=100, lr=1e-4, batch_size=10):
+    def train(self, epochs=10, epoch_size=10, lr=1e-4, batch_size=10):
         """Train for N epochs.
         """
         self.regressor.train(True)
@@ -231,6 +231,7 @@ class Model:
                 epoch_loss += loss.data[0]
 
             print('Loss: %f' % (epoch_loss / epoch_size))
+            print(yt, yp)
 
     def train_batch(self, batch):
         """Shuffle, predict.
