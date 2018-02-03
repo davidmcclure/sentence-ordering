@@ -7,9 +7,9 @@ import ujson
 
 from torchtext.vocab import Vectors
 
-from torch.autograd import Variable
-from torch.nn.utils.rnn import pad_sequence
+from torch import nn
 from torch.nn import functional as F
+from torch.autograd import Variable
 
 from cached_property import cached_property
 from glob import glob
@@ -105,3 +105,40 @@ class Corpus:
             reader = islice(reader, skim)
 
         self.grafs = list(tqdm(reader, total=skim))
+
+
+class Classifier(nn.Module):
+
+    def __init__(self):
+
+        super().__init__()
+
+        self.embeddings = nn.Embedding(
+            VECTORS.vectors.shape[0],
+            VECTORS.vectors.shape[1],
+        )
+
+        self.embeddings.weight.data.copy_(VECTORS.vectors)
+
+        self.convs1 = nn.ModuleList([
+            nn.Conv2d(1, 100, (n, VECTORS.vectors.shape[1]))
+            for n in (3, 4, 5)
+        ])
+
+        self.dropout = nn.Dropout()
+
+        self.out = nn.Linear(300, 5)
+
+    def forward(self, x):
+
+        embeds = self.embeddings(x)
+
+        x = embeds.unsqueeze(1)
+        x = [F.relu(conv(x)).squeeze(3) for conv in self.convs1]
+        x = [F.max_pool1d(i, i.size(2)).squeeze(2) for i in x]
+        x = torch.cat(x, 1)
+        x = self.dropout(x)
+
+        x = self.out(x)
+
+        return F.log_softmax(x, dim=1)
