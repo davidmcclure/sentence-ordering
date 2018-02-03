@@ -17,6 +17,8 @@ from glob import glob
 from itertools import islice
 from tqdm import tqdm
 
+from ..cuda import ftype, itype
+
 
 @attr.s
 class LazyVectors:
@@ -95,7 +97,7 @@ class Paragraph:
         perm = perm or range(len(self.sents))
 
         idx = [ti for si in perm for ti in self.sents[si].indexes]
-        idx = Variable(torch.LongTensor(idx))
+        idx = Variable(torch.LongTensor(idx)).type(itype)
 
         if pad:
             idx = F.pad(idx, (0, pad-len(idx)))
@@ -107,7 +109,7 @@ class Paragraph:
         """
         idx = []
         for sent in self.sents:
-            sidx = Variable(torch.LongTensor(sent.indexes))
+            sidx = Variable(torch.LongTensor(sent.indexes)).type(itype)
             sidx = F.pad(sidx, (0, pad-len(sidx)))
             idx.append(sidx)
 
@@ -201,7 +203,14 @@ class Model:
 
     @cached_property
     def regressor(self):
-        return Regressor()
+        """Initialize regressor.
+        """
+        reg = Regressor()
+
+        if torch.cuda.is_available():
+            reg.cuda()
+
+        return reg
 
     def train(self, epochs=10, epoch_size=10, lr=1e-4, batch_size=10):
         """Train for N epochs.
@@ -245,7 +254,7 @@ class Model:
 
         x = torch.stack([xi[perm] for xi, perm in zip(x, perms)])
 
-        yt = Variable(perms.float() / (x.shape[1]-1))
+        yt = Variable(perms.float() / (x.shape[1]-1)).type(ftype)
 
         yp = self.regressor(x)
 
