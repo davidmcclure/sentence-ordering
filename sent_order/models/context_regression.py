@@ -126,7 +126,7 @@ class Corpus:
         self.grafs = list(tqdm(reader, total=skim))
 
 
-class Classifier(nn.Module):
+class Regressor(nn.Module):
 
     def __init__(self):
 
@@ -139,31 +139,30 @@ class Classifier(nn.Module):
 
         self.embeddings.weight.data.copy_(VECTORS.vectors)
 
-        self.convs1 = nn.ModuleList([
-            nn.Conv3d(1, 100, (1, n, VECTORS.vectors.shape[1]))
-            for n in (3, 4, 5)
+        self.convs = nn.ModuleList([
+            nn.Conv3d(1, 500, (1, n, VECTORS.vectors.shape[1]))
+            for n in range(1, 10)
         ])
 
         self.dropout = nn.Dropout()
 
-        self.out = nn.Linear(300, 5)
+        self.out = nn.Linear(9*500*6, 5)
 
     def forward(self, x):
 
-        # batch | sent | word | embed
-        x = self.embeddings(x)
-
         # batch | in channel | sent | word | embed
-        x = x.unsqueeze(1)
+        x = self.embeddings(x).unsqueeze(1)
 
-        x = [F.relu(conv(x)).squeeze(4) for conv in self.convs1]
-        x = [F.max_pool2d(xi, xi.shape[2:]).view(1, -1) for xi in x]
-        x = torch.cat(x, 1)
+        x = [F.relu(conv(x)).squeeze(4) for conv in self.convs]
 
-        return x
+        gx = [F.max_pool2d(xi, xi.shape[-2:]).view(1, -1) for xi in x]
+        gx = torch.cat(gx, 1)
 
-        # x = self.dropout(x)
+        sx = [F.max_pool2d(xi, (1, xi.shape[-1])).view(1, -1) for xi in x]
+        sx = torch.cat(sx, 1)
 
-        # x = self.out(x)
+        x = torch.cat([gx, sx], 1)
 
-        # return F.log_softmax(x, dim=1)
+        x = self.dropout(x)
+
+        return self.out(x)
