@@ -20,30 +20,34 @@ from tqdm import tqdm
 from ..cuda import ftype, itype
 
 
-@attr.s
 class LazyVectors:
 
-    name = attr.ib(default='glove.840B.300d.txt')
-
     unk_idx = 1
+
+    def __init__(self, name='glove.840B.300d.txt'):
+        self.name = name
+        self.set_vocab([])
 
     @cached_property
     def loader(self):
         return Vectors(self.name)
 
+    def set_vocab(self, vocab):
+        self._itos = [v for v in vocab if v in self.loader.stoi]
+        self._stoi = {s: i for i, s in enumerate(self._itos)}
+
     @cached_property
-    def vectors(self):
-        return torch.cat([
-            torch.zeros((2, self.loader.dim)),
-            self.loader.vectors,
+    def weights(self):
+        weights = torch.stack([
+            self.loader.vectors[self.loader.stoi[s]]
+            for s in self._itos
         ])
 
-    def stoi(self, s):
-        idx = self.loader.stoi.get(s)
-        return idx + 2 if idx else self.unk_idx
+        return torch.cat([torch.zeros((2, self.loader.dim)), weights])
 
-    def itos(self, i):
-        return self.loader.itos[i - 2]
+    def stoi(self, s):
+        idx = self._stoi.get(s)
+        return idx + 2 if idx else self.unk_idx
 
 
 VECTORS = LazyVectors()
@@ -147,6 +151,17 @@ class Corpus:
         """
         return Batch(random.sample(self.grafs, size))
 
+    def vocab(self):
+        """Build vocab list.
+        """
+        vocab = set()
+
+        for graf in self.grafs:
+            for sent in graf.sents:
+                vocab.update(sent.tokens)
+
+        return list(vocab)
+
 
 class Regressor(nn.Module):
 
@@ -155,15 +170,14 @@ class Regressor(nn.Module):
         super().__init__()
 
         self.embeddings = nn.Embedding(
-            VECTORS.vectors.shape[0],
-            VECTORS.vectors.shape[1],
+            VECTORS.weights.shape[0],
+            VECTORS.weights.shape[1],
         )
 
-        self.embeddings.weight.data.copy_(VECTORS.vectors)
-        self.embeddings.requires_grad = False
+        self.embeddings.weight.data.copy_(VECTORS.weights)
 
         self.convs = nn.ModuleList([
-            nn.Conv3d(1, 100, (1, n, VECTORS.vectors.shape[1]))
+            nn.Conv3d(1, 100, (1, n, VECTORS.weights.shape[1]))
             for n in range(1, 6)
         ])
 
@@ -201,6 +215,7 @@ class Model:
 
     def __init__(self, *args, **kwargs):
         self.corpus = Corpus(*args, **kwargs)
+        VECTORS.set_vocab(self.corpus.vocab())
 
     @cached_property
     def regressor(self):
