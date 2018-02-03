@@ -62,12 +62,17 @@ class Paragraph:
     sents = attr.ib()
 
     @classmethod
-    def read_arxiv(cls, path):
+    def read_arxiv(cls, path, scount=None):
         """Wrap parsed arXiv abstracts as paragraphs.
         """
         for path in glob(os.path.join(path, '*.json')):
             for line in open(path):
-                yield cls.from_arxiv_json(line)
+
+                graf = cls.from_arxiv_json(line)
+
+                # Filter by sentence count.
+                if not scount or len(graf) == scount:
+                    yield graf
 
     @classmethod
     def from_arxiv_json(cls, line):
@@ -79,6 +84,9 @@ class Paragraph:
             Sentence(s['token'])
             for s in json['sentences']
         ])
+
+    def __len__(self):
+        return len(self.sents)
 
     def index_var_1d(self, perm=None, pad=None):
         """Token indexes, flattened to 1d series.
@@ -107,10 +115,10 @@ class Paragraph:
 
 class Corpus:
 
-    def __init__(self, path, skim=None):
+    def __init__(self, path, skim=None, scount=None):
         """Load grafs into memory.
         """
-        reader = Paragraph.read_arxiv(path)
+        reader = Paragraph.read_arxiv(path, scount)
 
         if skim:
             reader = islice(reader, skim)
@@ -132,7 +140,7 @@ class Classifier(nn.Module):
         self.embeddings.weight.data.copy_(VECTORS.vectors)
 
         self.convs1 = nn.ModuleList([
-            nn.Conv2d(1, 100, (n, VECTORS.vectors.shape[1]))
+            nn.Conv3d(1, 100, (1, n, VECTORS.vectors.shape[1]))
             for n in (3, 4, 5)
         ])
 
@@ -142,14 +150,20 @@ class Classifier(nn.Module):
 
     def forward(self, x):
 
-        embeds = self.embeddings(x)
+        # batch | sent | word | embed
+        x = self.embeddings(x)
 
-        x = embeds.unsqueeze(1)
-        x = [F.relu(conv(x)).squeeze(3) for conv in self.convs1]
-        x = [F.max_pool1d(i, i.size(2)).squeeze(2) for i in x]
+        # batch | in channel | sent | word | embed
+        x = x.unsqueeze(1)
+
+        x = [F.relu(conv(x)).squeeze(4) for conv in self.convs1]
+        x = [F.max_pool2d(xi, xi.shape[2:]).view(1, -1) for xi in x]
         x = torch.cat(x, 1)
-        x = self.dropout(x)
 
-        x = self.out(x)
+        return x
 
-        return F.log_softmax(x, dim=1)
+        # x = self.dropout(x)
+
+        # x = self.out(x)
+
+        # return F.log_softmax(x, dim=1)
