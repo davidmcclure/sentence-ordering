@@ -251,7 +251,7 @@ class Model:
         x = batch.index_var_2d()
 
         perms = torch.stack([
-            torch.randperm(x.shape[1])
+            torch.randperm(x.shape[1]).type(itype)
             for _ in range(len(x))
         ])
 
