@@ -3,6 +3,7 @@
 import attr
 import torch
 import os
+import random
 import ujson
 
 from torchtext.vocab import Vectors
@@ -113,6 +114,20 @@ class Paragraph:
         return torch.stack(idx)
 
 
+@attr.s
+class Batch:
+
+    grafs = attr.ib()
+
+    def index_var_2d(self, *args, **kwargs):
+        """Stack graf index tensors.
+        """
+        return torch.stack([
+            g.index_var_2d(*args, **kwargs)
+            for g in self.grafs
+        ])
+
+
 class Corpus:
 
     def __init__(self, path, skim=None, scount=None):
@@ -124,6 +139,11 @@ class Corpus:
             reader = islice(reader, skim)
 
         self.grafs = list(tqdm(reader, total=skim))
+
+    def random_batch(self, size):
+        """Query random batch.
+        """
+        return Batch(random.sample(self.grafs, size))
 
 
 class Regressor(nn.Module):
@@ -150,19 +170,35 @@ class Regressor(nn.Module):
 
     def forward(self, x):
 
-        # batch | in channel | sent | word | embed
         x = self.embeddings(x).unsqueeze(1)
 
-        x = [F.relu(conv(x)).squeeze(4) for conv in self.convs]
+        convs = [F.relu(conv(x)).squeeze(4) for conv in self.convs]
 
-        gx = [F.max_pool2d(xi, xi.shape[-2:]).view(1, -1) for xi in x]
-        gx = torch.cat(gx, 1)
+        gc = [
+            F.max_pool2d(c, c.shape[-2:]).view(len(x), -1)
+            for c in convs
+        ]
 
-        sx = [F.max_pool2d(xi, (1, xi.shape[-1])).view(1, -1) for xi in x]
-        sx = torch.cat(sx, 1)
+        sc = [
+            F.max_pool2d(c, (1, c.shape[-1])).view(len(x), -1)
+            for c in convs
+        ]
 
-        x = torch.cat([gx, sx], 1)
+        gc = torch.cat(gc, 1)
+        sc = torch.cat(sc, 1)
+
+        x = torch.cat([gc, sc], 1)
 
         x = self.dropout(x)
 
         return self.out(x)
+
+
+class Model:
+
+    def __init__(self, *args, **kwargs):
+        self.corpus = Corpus(*args, **kwargs)
+
+    @cached_property
+    def regressor(self):
+        return Regressor()
