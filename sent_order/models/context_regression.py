@@ -259,7 +259,7 @@ class Model:
 
                 yt, yp = self.train_batch(batch)
 
-                loss = ((yt-yp)**2).mean()
+                loss = ((yt-yp)**2).mean(1).mean()
                 loss.backward()
 
                 optimizer.step()
