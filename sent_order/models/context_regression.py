@@ -202,3 +202,50 @@ class Model:
     @cached_property
     def regressor(self):
         return Regressor()
+
+    def train(self, epochs=10, epoch_size=100, lr=1e-4, batch_size=10):
+        """Train for N epochs.
+        """
+        self.regressor.train(True)
+
+        optimizer = torch.optim.Adam(self.regressor.parameters(), lr=lr)
+
+        for epoch in range(epochs):
+
+            print(f'\nEpoch {epoch}')
+
+            epoch_loss = 0
+            for _ in tqdm(range(epoch_size)):
+
+                optimizer.zero_grad()
+
+                batch = self.corpus.random_batch(batch_size)
+
+                yt, yp = self.train_batch(batch)
+
+                loss = ((yt-yp)**2).mean()
+                loss.backward()
+
+                optimizer.step()
+
+                epoch_loss += loss.data[0]
+
+            print('Loss: %f' % (epoch_loss / epoch_size))
+
+    def train_batch(self, batch):
+        """Shuffle, predict.
+        """
+        x = batch.index_var_2d()
+
+        perms = torch.stack([
+            torch.randperm(x.shape[1])
+            for _ in range(len(x))
+        ])
+
+        x = torch.stack([xi[perm] for xi, perm in zip(x, perms)])
+
+        yt = Variable(perms.float() / (x.shape[1]-1))
+
+        yp = self.regressor(x)
+
+        return yt, yp
