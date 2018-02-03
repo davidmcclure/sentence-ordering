@@ -186,7 +186,7 @@ class Regressor(nn.Module):
 
         self.dropout = nn.Dropout()
 
-        self.fc1 = nn.Linear(5*5000*6, 500)
+        self.fc1 = nn.Linear(5*5000*6, 1000)
         self.fc2 = nn.Linear(1000, 500)
         self.fc3 = nn.Linear(500, 5)
 
