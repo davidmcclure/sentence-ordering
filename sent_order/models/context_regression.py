@@ -1,5 +1,7 @@
 
 
+import numpy as np
+
 import attr
 import torch
 import os
@@ -15,6 +17,7 @@ from torch.autograd import Variable
 from cached_property import cached_property
 from glob import glob
 from itertools import islice
+from scipy.stats import kendalltau
 from tqdm import tqdm
 
 from ..cuda import ftype, itype
@@ -247,6 +250,7 @@ class Model:
             print(f'\nEpoch {epoch}')
 
             epoch_loss = 0
+            kts = []
             for _ in tqdm(range(epoch_size)):
 
                 optimizer.zero_grad()
@@ -262,8 +266,15 @@ class Model:
 
                 epoch_loss += loss.data[0]
 
+                for t, p in zip(yt, yp):
+                    t = np.argsort(t.data)
+                    p = np.argsort(p.data)
+                    kt = kendalltau(t, p)
+                    kts.append(kt.correlation)
+
             print('Loss: %f' % (epoch_loss / epoch_size))
-            print(yt, yp)
+            print('KT: %f' % np.mean(kts))
+            print('PMR: %f' % (kts.count(1) / len(kts)))
 
     def train_batch(self, batch):
         """Shuffle, predict.
