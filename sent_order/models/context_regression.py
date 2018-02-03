@@ -93,6 +93,17 @@ class Paragraph:
 
         return idx
 
+    def index_var_2d(self, pad=50):
+        """Token indexes, flattened to 1d series.
+        """
+        idx = []
+        for sent in self.sents:
+            sidx = Variable(torch.LongTensor(sent.indexes))
+            sidx = F.pad(sidx, (0, pad-len(sidx)))
+            idx.append(sidx)
+
+        return torch.stack(idx)
+
 
 class Corpus:
 
