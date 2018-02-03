@@ -180,14 +180,14 @@ class Regressor(nn.Module):
         self.embeddings.weight.data.copy_(VECTORS.weights)
 
         self.convs = nn.ModuleList([
-            nn.Conv3d(1, 500, (1, n, VECTORS.weights.shape[1]))
+            nn.Conv3d(1, 5000, (1, n, VECTORS.weights.shape[1]))
             for n in range(1, 6)
         ])
 
         self.dropout = nn.Dropout()
 
-        self.fc1 = nn.Linear(5*500*6, 500)
-        self.fc2 = nn.Linear(500, 500)
+        self.fc1 = nn.Linear(5*5000*6, 500)
+        self.fc2 = nn.Linear(1000, 500)
         self.fc3 = nn.Linear(500, 5)
 
     def forward(self, x):
