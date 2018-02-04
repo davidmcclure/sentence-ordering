@@ -111,6 +111,25 @@ class Paragraph:
             for s in json['sentences']
         ])
 
+    def index_var_2d(self, pad=50):
+        """Sentence x word tensor.
+
+        Returns: indexes, unpadded sizes
+        """
+        idxs, sizes = [], []
+        for sent in self.sents:
+
+            # Token indexes.
+            idx = Variable(torch.LongTensor(sent.indexes)).type(itype)
+            idx = F.pad(idx, (0, pad-len(idx)))
+            idxs.append(idx)
+
+            # Padded word count.
+            size = min(pad, len(sent.indexes))
+            sizes.append(size)
+
+        return torch.stack(idxs), torch.LongTensor(sizes).type(itype)
+
 
 @attr.s
 class Batch:
