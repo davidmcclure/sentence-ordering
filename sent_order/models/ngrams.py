@@ -24,6 +24,51 @@ from tqdm import tqdm
 from ..cuda import ftype, itype
 
 
+def pad_and_stack(xs, pad_size):
+    """Pad and stack a list of variable-length seqs.
+
+    Args:
+        xs (list[Variable])
+        pad_size (int)
+
+    Returns: stacked xs, sizes
+    """
+    padded, sizes = [], []
+    for x in xs:
+
+        px = F.pad(x, (0, pad_size-len(x)))
+        padded.append(px)
+
+        size = min(pad_size, len(x))
+        sizes.append(size)
+
+    return torch.stack(padded), sizes
+
+
+def pack(x, sizes, batch_first=True):
+    """Pack padded variables, provide reorder indexes.
+
+    Args:
+        batch (Variable)
+        sizes (list[int])
+
+    Returns: packed sequence, reorder indexes
+    """
+    size_sort = np.argsort(sizes)[::-1].tolist()
+
+    # Sort x and sizes by size descending.
+    x = x[torch.LongTensor(size_sort).type(itype)]
+    sizes = np.array(sizes)[size_sort].tolist()
+
+    # Indexes to restore original order.
+    reorder = torch.LongTensor(np.argsort(size_sort)).type(itype)
+
+    # Pack the sequence.
+    packed = pack_padded_sequence(x, sizes, batch_first)
+
+    return packed, reorder
+
+
 class LazyVectors:
 
     unk_idx = 1
@@ -75,9 +120,11 @@ class Sentence:
 
     tokens = attr.ib()
 
-    @cached_property
-    def indexes(self):
-        return [VECTORS.stoi(s) for s in self.tokens]
+    def index_var(self):
+        idx = [VECTORS.stoi(s) for s in self.tokens]
+        idx = torch.LongTensor(idx)
+        idx = Variable(idx).type(itype)
+        return idx
 
 
 @attr.s
@@ -112,51 +159,14 @@ class Paragraph:
             for s in json['sentences']
         ])
 
-    def padded_token_indexes(self, pad=50):
-        """Token indexes.
-
-        Returns: indexes, sizes
-        """
-        idxs, sizes = [], []
-        for sent in self.sents:
-
-            # Token indexes.
-            idx = Variable(torch.LongTensor(sent.indexes)).type(itype)
-            idx = F.pad(idx, (0, pad-len(idx)))
-            idxs.append(idx)
-
-            # Padded word count.
-            size = min(pad, len(sent.indexes))
-            sizes.append(size)
-
-        return torch.stack(idxs), torch.LongTensor(sizes).type(itype)
-
 
 @attr.s
 class Batch:
 
     grafs = attr.ib()
 
-    def packed_token_indexes(self):
-        """Token indexes.
-
-        Returns: packed indexes, reorder
-        """
-        sents = zip(*[g.padded_token_indexes() for g in self.grafs])
-        sents, sizes = map(torch.cat, sents)
-
-        # Sort by size, descending.
-        size_sort = np.argsort(list(sizes))[::-1].tolist()
-        sents = sents[torch.LongTensor(size_sort).type(itype)]
-        sizes = np.array(sizes)[size_sort].tolist()
-
-        # Indexes to restore original order.
-        reorder = torch.LongTensor(np.argsort(size_sort)).type(itype)
-
-        # Pack the sequence.
-        packed = pack_padded_sequence(sents, sizes, batch_first=True)
-
-        return packed, reorder
+    def index_vars(self):
+        return [s.index_var() for g in self.grafs for s in g.sents]
 
 
 class Corpus:
@@ -186,3 +196,33 @@ class Corpus:
                 vocab.update(sent.tokens)
 
         return list(vocab)
+
+
+class Encoder(nn.Module):
+
+    def __init__(self):
+        """Initialize embeddings + LSTM.
+        """
+        super().__init__()
+
+        self.embeddings = nn.Embedding(
+            VECTORS.weights.shape[0],
+            VECTORS.weights.shape[1],
+        )
+
+        self.embeddings.weight.data.copy_(VECTORS.weights)
+
+        self.lstm = nn.LSTM(300, 500, batch_first=True)
+
+    def forward(self, x, pad_size=50):
+        """Encode sentences.
+        """
+        x, sizes = pad_and_stack(x, pad_size)
+
+        x = self.embeddings(x)
+
+        x, reorder = pack(x, sizes)
+
+        _, (hn, _) = self.lstm(x)
+
+        return hn[0][reorder]
