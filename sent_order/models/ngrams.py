@@ -12,6 +12,7 @@ from torchtext.vocab import Vectors
 
 from torch import nn
 from torch.nn import functional as F
+from torch.nn.utils.rnn import pack_padded_sequence
 from torch.autograd import Variable
 
 from cached_property import cached_property
@@ -111,10 +112,10 @@ class Paragraph:
             for s in json['sentences']
         ])
 
-    def index_var_2d(self, pad=50):
-        """Sentence x word tensor.
+    def padded_token_indexes(self, pad=50):
+        """Token indexes.
 
-        Returns: indexes, unpadded sizes
+        Returns: indexes, sizes
         """
         idxs, sizes = [], []
         for sent in self.sents:
@@ -133,7 +134,29 @@ class Paragraph:
 
 @attr.s
 class Batch:
+
     grafs = attr.ib()
+
+    def packed_token_indexes(self):
+        """Token indexes.
+
+        Returns: packed indexes, reorder
+        """
+        sents = zip(*[g.padded_token_indexes() for g in self.grafs])
+        sents, sizes = map(torch.cat, sents)
+
+        # Sort by size, descending.
+        size_sort = np.argsort(list(sizes))[::-1].tolist()
+        sents = sents[torch.LongTensor(size_sort).type(itype)]
+        sizes = np.array(sizes)[size_sort].tolist()
+
+        # Indexes to restore original order.
+        reorder = torch.LongTensor(np.argsort(size_sort)).type(itype)
+
+        # Pack the sequence.
+        packed = pack_padded_sequence(sents, sizes, batch_first=True)
+
+        return packed, reorder
 
 
 class Corpus:
