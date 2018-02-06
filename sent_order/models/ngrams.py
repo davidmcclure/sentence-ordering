@@ -89,7 +89,6 @@ class LazyVectors:
         # Map string -> intersected index.
         self._stoi = {s: i for i, s in enumerate(self.vocab)}
 
-    @cached_property
     def weights(self):
         """Build weights tensor for embedding layer.
         """
@@ -168,6 +167,15 @@ class Batch:
     def index_vars(self):
         return [s.index_var() for g in self.grafs for s in g.sents]
 
+    def repack_sents(self, sents):
+        """Repack encoded sentences by paragraph.
+        """
+        start = 0
+        for graf in self.grafs:
+            end = start + len(graf.sents)
+            yield sents[start:end]
+            start = end
+
 
 class Corpus:
 
@@ -200,19 +208,25 @@ class Corpus:
 
 class Encoder(nn.Module):
 
-    def __init__(self):
+    def __init__(self, lstm_dim=500):
         """Initialize embeddings + LSTM.
         """
         super().__init__()
 
+        weights = VECTORS.weights()
+
         self.embeddings = nn.Embedding(
-            VECTORS.weights.shape[0],
-            VECTORS.weights.shape[1],
+            weights.shape[0],
+            weights.shape[1],
         )
 
-        self.embeddings.weight.data.copy_(VECTORS.weights)
+        self.embeddings.weight.data.copy_(weights)
 
-        self.lstm = nn.LSTM(300, 500, batch_first=True)
+        self.lstm = nn.LSTM(
+            weights.shape[1],
+            lstm_dim,
+            batch_first=True,
+        )
 
     def forward(self, x, pad_size=50):
         """Encode sentences.
@@ -226,3 +240,96 @@ class Encoder(nn.Module):
         _, (hn, _) = self.lstm(x)
 
         return hn[0][reorder]
+
+
+class Predictor(nn.Module):
+
+    def __init__(self, n=5, sent_dim=500):
+        """Initialize linear layers.
+        """
+        super().__init__()
+        self.out = nn.Linear(n*sent_dim, sent_dim)
+
+    def forward(self, contexts):
+        """Predict next sentence.
+        """
+        x = []
+        for ctx in contexts:
+            ctx = ctx.view(-1)
+            ctx = F.pad(ctx, (0, self.out.in_features-len(ctx)))
+            x.append(ctx)
+
+        x = torch.stack(x)
+
+        return self.out(x)
+
+
+class Model:
+
+    def __init__(self, *args, **kwargs):
+        """Initialize corpus, vocab, modules.
+        """
+        self.corpus = Corpus(*args, **kwargs)
+
+        VECTORS.set_vocab(self.corpus.vocab())
+
+        self.encoder = Encoder()
+        self.predictor = Predictor()
+
+        if torch.cuda.is_available():
+            self.encoder.cuda()
+            self.predector.cuda()
+
+    def params(self):
+        """Combined params for all modules.
+        """
+        p1 = self.encoder.parameters()
+        p2 = self.predictor.parameters()
+
+        return list(p1) + list(p2)
+
+    def train(self, epochs=10, epoch_size=10, lr=1e-4, batch_size=10):
+        """Train for N epochs.
+        """
+        optimizer = torch.optim.Adam(self.params(), lr=lr)
+
+        for epoch in range(epochs):
+
+            print(f'\nEpoch {epoch}')
+
+            epoch_loss = 0
+            for _ in tqdm(range(epoch_size)):
+
+                optimizer.zero_grad()
+
+                batch = self.corpus.random_batch(batch_size)
+
+                yt, yp = self.train_batch(batch)
+
+                # TODO: Use CosineEmbeddingLoss?
+                loss = 1-F.cosine_similarity(yt, yp).mean()
+                loss.backward()
+
+                optimizer.step()
+
+                epoch_loss += loss.data[0]
+
+            print(epoch_loss / epoch_size)
+            print(yp[:5])
+
+
+    def train_batch(self, batch):
+        """Train a batch.
+        """
+        sents = batch.index_vars()
+
+        sents = self.encoder(sents)
+
+        x, y = [], []
+        for graf in batch.repack_sents(sents):
+            # TODO: Include empty context for 1st sent.
+            for i in range(1, len(graf)-1):
+                x.append(graf[:i])
+                y.append(graf[i])
+
+        return torch.stack(y), self.predictor(x)
