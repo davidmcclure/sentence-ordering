@@ -6,6 +6,8 @@ import ujson
 import attr
 
 from torchtext.vocab import Vectors
+from torch import nn
+
 from cached_property import cached_property
 from glob import glob
 from boltons.iterutils import chunked_iter
@@ -215,14 +217,25 @@ class Regressor(nn.Module):
         return self.out(y)
 
 
+class Model(nn.Module):
+
+    def __init__(self, se_dim=500, ge_dim=500, lin_dim=200):
+        super().__init__()
+        self.sent_encoder = Encoder(VECTORS.loader.dim, se_dim)
+        self.graf_encoder = Encoder(se_dim, ge_dim)
+        self.regressor = Regressor(ge_dim, lin_dim)
+
+
 class Trainer:
 
-    def __init__(self, train_path, skim=None, lr=1e-3):
+    def __init__(self, train_path, skim=None, lr=1e-3, *args, **kwargs):
 
         self.train_corpus = Corpus(train_path, skim)
 
         VECTORS.set_vocab(self.train_corpus.vocab())
 
-        # init encoders + regressor
+        self.model = Model(*args, **kwargs)
 
-        # self.optimizer = optim.Adam()
+        params = [p for p in self.model.parameters() if p.requires_grad]
+
+        self.optimizer = optim.Adam(params, lr=lr)
