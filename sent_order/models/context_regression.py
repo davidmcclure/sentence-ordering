@@ -173,6 +173,11 @@ class Corpus:
 
         return list(vocab)
 
+    def batches(self, size):
+        """Generate batches.
+        """
+        return [Batch(grafs) for grafs in chunked_iter(self.grafs, size)]
+
 
 class Encoder(nn.Module):
 
@@ -220,7 +225,9 @@ class Regressor(nn.Module):
 class Model(nn.Module):
 
     def __init__(self, se_dim=500, ge_dim=500, lin_dim=200):
+
         super().__init__()
+
         self.sent_encoder = Encoder(VECTORS.loader.dim, se_dim)
         self.graf_encoder = Encoder(se_dim, ge_dim)
         self.regressor = Regressor(ge_dim, lin_dim)
@@ -239,3 +246,30 @@ class Trainer:
         params = [p for p in self.model.parameters() if p.requires_grad]
 
         self.optimizer = optim.Adam(params, lr=lr)
+
+        # TODO: CUDA
+
+    def train(self, epochs=10, batch_size=20):
+
+        for epoch in range(epochs):
+
+            print(f'\nEpoch {epoch}')
+
+            self.model.train()
+
+            epoch_loss = []
+            for batch in self.train_corpus.batches():
+
+                self.optimizer.zero_grad()
+
+                yt, yp = self.train_batch(batch)
+
+                loss = F.mse_loss(yp, yt)
+                loss.backward()
+
+                self.optimizer.step()
+
+                epoch_loss.append(loss.data[0])
+
+            print('Loss: %f' % np.mean(epoch_loss))
+            # TODO: eval
