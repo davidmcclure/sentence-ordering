@@ -170,3 +170,59 @@ class Corpus:
                 vocab.update(sent.tokens)
 
         return list(vocab)
+
+
+class Encoder(nn.Module):
+
+    def __init__(self, input_dim, lstm_dim):
+        """Initialize the LSTM.
+        """
+        super().__init__()
+
+        self.lstm = nn.LSTM(
+            input_dim,
+            lstm_dim,
+            bidirectional=True,
+            batch_first=True,
+        )
+
+    def forward(self, x, pad_size):
+        """Pad, pack, encode, reorder.
+
+        Args:
+            contexts (list of Variable): Encoded sentences for each graf.
+        """
+        # Pad, pack, encode.
+        x, reorder = pad_and_pack(x, pad_size)
+        _, (hn, _) = self.lstm(x)
+
+        # Cat forward + backward hidden layers.
+        # TODO: Is this wrong?
+        out = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
+
+        return out[reorder]
+
+
+class Regressor(nn.Module):
+
+    def __init__(self, input_dim, lin_dim):
+        super().__init__()
+        self.lin = nn.Linear(input_dim, lin_dim)
+        self.out = nn.Linear(lin_dim, 1)
+
+    def forward(self, x):
+        y = F.relu(self.lin(x))
+        return self.out(y)
+
+
+class Trainer:
+
+    def __init__(self, train_path, skim=None, lr=1e-3):
+
+        self.train_corpus = Corpus(train_path, skim)
+
+        VECTORS.set_vocab(self.train_corpus.vocab())
+
+        # init encoders + regressor
+
+        # self.optimizer = optim.Adam()
