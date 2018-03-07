@@ -5,14 +5,76 @@ import os
 import ujson
 import attr
 
+import numpy as np
+
 from torchtext.vocab import Vectors
-from torch import nn
+from torch import nn, optim
+from torch.autograd import Variable
+from torch.nn.utils.rnn import pack_padded_sequence
+from torch.nn import functional as F
 
 from cached_property import cached_property
 from glob import glob
 from boltons.iterutils import chunked_iter
 from tqdm import tqdm
 from itertools import islice
+
+from sent_order.cuda import itype
+
+
+def pad_and_stack(xs, pad_size=None):
+    """Pad and stack a list of variable-length seqs.
+
+    Args:
+        xs (list[Variable])
+        pad_size (int)
+
+    Returns: stacked xs, sizes
+    """
+    # Default to max seq size.
+    if not pad_size:
+        pad_size = max([len(x) for x in xs])
+
+    padded, sizes = [], []
+    for x in xs:
+
+        # Ensure length > 0.
+        if len(x) == 0:
+            x = x.new(1).zero_()
+
+        px = F.pad(x, (0, pad_size-len(x)))
+        padded.append(px)
+
+        size = min(pad_size, len(x))
+        sizes.append(size)
+
+    return torch.stack(padded), sizes
+
+
+def pack(x, sizes, batch_first=True):
+    """Pack padded variables, provide reorder indexes.
+
+    Args:
+        batch (Variable)
+        sizes (list[int])
+
+    Returns: packed sequence, reorder indexes
+    """
+    # Get indexes for sorted sizes.
+    size_sort = np.argsort(sizes)[::-1].tolist()
+
+    # Sort the tensor by size.
+    x = x[torch.LongTensor(size_sort).type(itype)]
+
+    # Sort sizes descending.
+    sizes = np.array(sizes)[size_sort].tolist()
+
+    x = pack_padded_sequence(x, sizes, batch_first)
+
+    # Indexes to restore original order.
+    reorder = torch.LongTensor(np.argsort(size_sort)).type(itype)
+
+    return x, reorder
 
 
 def read_abstracts(path):
@@ -74,9 +136,10 @@ class Sentence:
 
     tokens = attr.ib()
 
-    @cached_property
-    def indexes(self):
-        return [VECTORS.stoi(s) for s in self.tokens]
+    def index_var(self):
+        idx = [VECTORS.stoi(s) for s in self.tokens]
+        idx = torch.LongTensor(idx)
+        return Variable(idx).type(itype)
 
 
 @attr.s
@@ -111,43 +174,20 @@ class Paragraph:
     def __len__(self):
         return len(self.sents)
 
-    # def index_var_1d(self, perm=None, pad=None):
-        # """Token indexes, flattened to 1d series.
-        # """
-        # perm = perm or range(len(self.sents))
-
-        # idx = [ti for si in perm for ti in self.sents[si].indexes]
-        # idx = Variable(torch.LongTensor(idx)).type(itype)
-
-        # if pad:
-            # idx = F.pad(idx, (0, pad-len(idx)))
-
-        # return idx
-
-    # def index_var_2d(self, pad=50):
-        # """Token indexes, flattened to 1d series.
-        # """
-        # idx = []
-        # for sent in self.sents:
-            # sidx = Variable(torch.LongTensor(sent.indexes)).type(itype)
-            # sidx = F.pad(sidx, (0, pad-len(sidx)))
-            # idx.append(sidx)
-
-        # return torch.stack(idx)
-
 
 @attr.s
 class Batch:
 
     grafs = attr.ib()
 
-    # def index_var_2d(self, *args, **kwargs):
-        # """Stack graf index tensors.
-        # """
-        # return torch.stack([
-            # g.index_var_2d(*args, **kwargs)
-            # for g in self.grafs
-        # ])
+    def index_var(self, pad=50):
+        """Token indexes, flattened to 1d series.
+        """
+        return pad_and_stack([
+            sent.index_var()
+            for graf in self.grafs
+            for sent in graf.sents
+        ])
 
 
 class Corpus:
@@ -179,12 +219,21 @@ class Corpus:
         return [Batch(grafs) for grafs in chunked_iter(self.grafs, size)]
 
 
-class Encoder(nn.Module):
+class SentEncoder(nn.Module):
 
     def __init__(self, input_dim, lstm_dim):
         """Initialize the LSTM.
         """
         super().__init__()
+
+        weights = VECTORS.weights()
+
+        self.embeddings = nn.Embedding(
+            weights.shape[0],
+            weights.shape[1],
+        )
+
+        self.embeddings.weight.data.copy_(weights)
 
         self.lstm = nn.LSTM(
             input_dim,
@@ -193,18 +242,21 @@ class Encoder(nn.Module):
             batch_first=True,
         )
 
-    def forward(self, x, pad_size):
+    def forward(self, batch):
         """Pad, pack, encode, reorder.
 
         Args:
             contexts (list of Variable): Encoded sentences for each graf.
         """
-        # Pad, pack, encode.
-        x, reorder = pad_and_pack(x, pad_size)
+        x, sizes = batch.index_var()
+
+        x = self.embeddings(x)
+
+        x, reorder = pack(x, sizes)
+
         _, (hn, _) = self.lstm(x)
 
         # Cat forward + backward hidden layers.
-        # TODO: Is this wrong?
         out = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
 
         return out[reorder]
@@ -228,9 +280,9 @@ class Model(nn.Module):
 
         super().__init__()
 
-        self.sent_encoder = Encoder(VECTORS.loader.dim, se_dim)
-        self.graf_encoder = Encoder(se_dim, ge_dim)
-        self.regressor = Regressor(ge_dim, lin_dim)
+        self.sent_encoder = SentEncoder(VECTORS.loader.dim, se_dim)
+        # self.graf_encoder = Encoder(se_dim, ge_dim)
+        # self.regressor = Regressor(ge_dim, lin_dim)
 
 
 class Trainer:
@@ -258,7 +310,7 @@ class Trainer:
             self.model.train()
 
             epoch_loss = []
-            for batch in self.train_corpus.batches():
+            for batch in self.train_corpus.batches(batch_size):
 
                 self.optimizer.zero_grad()
 
@@ -273,3 +325,11 @@ class Trainer:
 
             print('Loss: %f' % np.mean(epoch_loss))
             # TODO: eval
+
+    def train_batch(self, batch):
+        sents = self.model.sent_encoder(batch)
+        print(sents)
+        # get list of word index tensors for sents
+        # encode sents
+        # regroup by graf
+        # make training pairs
