@@ -38,11 +38,18 @@ def pad_and_stack(xs, pad_size=None):
     padded, sizes = [], []
     for x in xs:
 
+        # TODO
         # Ensure length > 0.
-        if len(x) == 0:
-            x = x.new(1).zero_()
+        # if len(x) == 0:
+            # x = x.new(1).zero_()
 
-        px = F.pad(x, (0, pad_size-len(x)))
+        if x.dim() == 1:
+            padding = (0, pad_size-len(x))
+
+        elif x.dim() == 2:
+            padding = (0, 0, 0, pad_size-len(x))
+
+        px = F.pad(x, padding)
         padded.append(px)
 
         size = min(pad_size, len(x))
@@ -189,6 +196,15 @@ class Batch:
             for sent in graf.sents
         ])
 
+    def repack_grafs(self, encoded):
+        """Repacking encoded sentences.
+        """
+        start = 0
+        for ab in self.grafs:
+            end = start + len(ab.sents)
+            yield encoded[start:end]
+            start = end
+
 
 class Corpus:
 
@@ -246,7 +262,7 @@ class SentEncoder(nn.Module):
         """Pad, pack, encode, reorder.
 
         Args:
-            contexts (list of Variable): Encoded sentences for each graf.
+            batch (Batch)
         """
         x, sizes = batch.index_var()
 
@@ -258,6 +274,38 @@ class SentEncoder(nn.Module):
 
         # Cat forward + backward hidden layers.
         out = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
+        # out = torch.cat(hn, dim=1)
+
+        return out[reorder]
+
+
+class GrafEncoder(nn.Module):
+
+    def __init__(self, input_dim, lstm_dim):
+        """Initialize the LSTM.
+        """
+        super().__init__()
+
+        self.lstm = nn.LSTM(
+            input_dim,
+            lstm_dim,
+            bidirectional=True,
+            batch_first=True,
+        )
+
+    def forward(self, x):
+        """Pad, pack, encode, reorder.
+
+        Args:
+            grafs (list of Variable): Encoded sentences for each graf.
+        """
+        x, reorder = pack(*pad_and_stack(x))
+
+        _, (hn, _) = self.lstm(x)
+
+        # Cat forward + backward hidden layers.
+        out = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
+        # out = torch.cat(hn, dim=1)
 
         return out[reorder]
 
@@ -281,8 +329,7 @@ class Model(nn.Module):
         super().__init__()
 
         self.sent_encoder = SentEncoder(VECTORS.loader.dim, se_dim)
-        # self.graf_encoder = Encoder(se_dim, ge_dim)
-        # self.regressor = Regressor(ge_dim, lin_dim)
+        self.graf_encoder = GrafEncoder(se_dim*2, ge_dim)
 
 
 class Trainer:
@@ -330,7 +377,28 @@ class Trainer:
 
         sents = self.model.sent_encoder(batch)
 
+        grafs = []
+        for graf in batch.repack_grafs(sents):
+            perm = torch.randperm(len(graf)).type(itype)
+            grafs.append(graf[perm])
+
+        grafs = self.model.graf_encoder(grafs)
+
         print(sents)
+        print('----')
+        print(grafs)
+        print('----')
+
+        # grafs, sents, ys = [], [], []
+        # for graf in batch.repack_grafs(sents):
+
+            # perm = torch.randperm(len(ab)).type(itype)
+            # grafs.append(graf[perm])
+
+            # for i in range(len(graf)):
+                # sents.append(graf[i])
+                # ys.append(i / (len(graf)-1))
+
         # get list of word index tensors for sents
         # encode sents
         # regroup by graf
