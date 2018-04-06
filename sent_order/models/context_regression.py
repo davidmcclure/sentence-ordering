@@ -257,7 +257,7 @@ class SentEncoder(nn.Module):
         _, (hn, _) = self.lstm(x)
 
         # Cat forward + backward hidden layers.
-        out = hn.transpose(0, 1).contiguous().view(hn.data.shape[1], -1)
+        out = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
 
         return out[reorder]
 
@@ -327,7 +327,9 @@ class Trainer:
             # TODO: eval
 
     def train_batch(self, batch):
+
         sents = self.model.sent_encoder(batch)
+
         print(sents)
         # get list of word index tensors for sents
         # encode sents
