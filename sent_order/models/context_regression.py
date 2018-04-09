@@ -19,7 +19,7 @@ from boltons.iterutils import chunked_iter
 from tqdm import tqdm
 from itertools import islice
 
-from sent_order.cuda import itype
+from sent_order.cuda import itype, ftype
 
 
 def pad_and_stack(xs, pad_size=None):
@@ -330,6 +330,7 @@ class Model(nn.Module):
 
         self.sent_encoder = SentEncoder(VECTORS.loader.dim, se_dim)
         self.graf_encoder = GrafEncoder(se_dim*2, ge_dim)
+        self.regressor = Regressor(se_dim*2 + ge_dim*2, lin_dim)
 
 
 class Trainer:
@@ -357,7 +358,7 @@ class Trainer:
             self.model.train()
 
             epoch_loss = []
-            for batch in self.train_corpus.batches(batch_size):
+            for batch in tqdm(self.train_corpus.batches(batch_size)):
 
                 self.optimizer.zero_grad()
 
@@ -368,7 +369,7 @@ class Trainer:
 
                 self.optimizer.step()
 
-                epoch_loss.append(loss.data[0])
+                epoch_loss.append(loss.item())
 
             print('Loss: %f' % np.mean(epoch_loss))
             # TODO: eval
@@ -384,22 +385,13 @@ class Trainer:
 
         grafs = self.model.graf_encoder(grafs)
 
-        print(sents)
-        print('----')
-        print(grafs)
-        print('----')
+        xs, ys = [], []
+        for graf, sents in zip(grafs, batch.repack_grafs(sents)):
+            for i in range(len(sents)):
+                xs.append(torch.cat([graf, sents[i]], dim=0))
+                ys.append(i / (len(sents)-1))
 
-        # grafs, sents, ys = [], [], []
-        # for graf in batch.repack_grafs(sents):
+        x = torch.stack(xs).type(ftype)
+        y = torch.FloatTensor(ys).type(ftype)
 
-            # perm = torch.randperm(len(ab)).type(itype)
-            # grafs.append(graf[perm])
-
-            # for i in range(len(graf)):
-                # sents.append(graf[i])
-                # ys.append(i / (len(graf)-1))
-
-        # get list of word index tensors for sents
-        # encode sents
-        # regroup by graf
-        # make training pairs
+        return y, self.model.regressor(x).squeeze()
