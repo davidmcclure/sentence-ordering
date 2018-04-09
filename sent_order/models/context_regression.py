@@ -335,9 +335,11 @@ class Model(nn.Module):
 
 class Trainer:
 
-    def __init__(self, train_path, skim=None, lr=1e-3, *args, **kwargs):
+    def __init__(self, train_path, val_path, train_skim=None, val_skim=None,
+        lr=1e-3, *args, **kwargs):
 
-        self.train_corpus = Corpus(train_path, skim)
+        self.train_corpus = Corpus(train_path, train_skim)
+        self.val_corpus = Corpus(val_path, val_skim)
 
         VECTORS.set_vocab(self.train_corpus.vocab())
 
@@ -362,7 +364,7 @@ class Trainer:
 
                 self.optimizer.zero_grad()
 
-                yt, yp = self.train_batch(batch)
+                yt, yp = self.eval_batch(batch)
 
                 loss = F.mse_loss(yp, yt)
                 loss.backward()
@@ -372,9 +374,17 @@ class Trainer:
                 epoch_loss.append(loss.item())
 
             print('Loss: %f' % np.mean(epoch_loss))
-            # TODO: eval
 
-    def train_batch(self, batch):
+            for batch in tqdm(self.val_corpus.batches(batch_size)):
+
+                yts, yps = self.eval_batch(batch)
+                yts = batch.repack_grafs(yts)
+                yps = batch.repack_grafs(yps)
+
+                for yt, yp in zip(yts, yps):
+                    print(yt, yp)
+
+    def eval_batch(self, batch):
 
         sents = self.model.sent_encoder(batch)
 
@@ -395,3 +405,17 @@ class Trainer:
         y = torch.FloatTensor(ys).type(ftype)
 
         return y, self.model.regressor(x).squeeze()
+    #
+    # def predict(self, sents):
+    #
+    #     perm = torch.randperm(len(sents)).type(itype)
+    #     sents = sents[perm]
+    #
+    #     context = self.model.graf_encoder([sents])
+    #
+    #     x = torch.stack([
+    #         torch.cat([context, sents], dim=0)
+    #         for sent in sents
+    #     ])
+    #
+    #     return self.model.regressor(x)
