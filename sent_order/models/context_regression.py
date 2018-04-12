@@ -245,7 +245,7 @@ class Corpus:
             for sent in graf.sents:
                 vocab.update(sent.tokens)
 
-        return list(vocab)
+        return vocab
 
     def batches(self, size):
         """Generate batches.
@@ -377,7 +377,12 @@ class Trainer:
         self.train_corpus = Corpus(train_path, train_skim)
         self.val_corpus = Corpus(val_path, val_skim)
 
-        VECTORS.set_vocab(self.train_corpus.vocab())
+        vocab = set.union(
+            self.train_corpus.vocab(),
+            self.val_corpus.vocab(),
+        )
+
+        VECTORS.set_vocab(vocab)
 
         self.model = Model(*args, **kwargs)
 
@@ -416,7 +421,7 @@ class Trainer:
     def val_mean_kt(self):
 
             kts = []
-            for batch in self.val_corpus.batches(20):
+            for batch in tqdm(self.val_corpus.batches(20)):
 
                 yts = batch.sent_pos_tensors()
                 yps = self.model(batch)
