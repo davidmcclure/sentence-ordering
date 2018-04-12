@@ -275,6 +275,8 @@ class SentEncoder(nn.Module):
             batch_first=True,
         )
 
+        self.dropout = nn.Dropout()
+
     def forward(self, batch):
         """Pad, pack, encode, reorder.
 
@@ -284,10 +286,12 @@ class SentEncoder(nn.Module):
         x, sizes = batch.token_idx_tensor()
 
         x = self.embeddings(x)
+        x = self.dropout(x)
 
         x, reorder = pack(x, sizes)
 
         _, (hn, _) = self.lstm(x)
+        hn = self.dropout(hn)
 
         # Cat forward + backward hidden layers.
         out = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
@@ -309,6 +313,8 @@ class GrafEncoder(nn.Module):
             batch_first=True,
         )
 
+        self.dropout = nn.Dropout()
+
     def forward(self, x):
         """Pad, pack, encode, reorder.
 
@@ -318,6 +324,7 @@ class GrafEncoder(nn.Module):
         x, reorder = pack(*pad_and_stack(x))
 
         _, (hn, _) = self.lstm(x)
+        hn = self.dropout(hn)
 
         # Cat forward + backward hidden layers.
         out = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
@@ -422,20 +429,22 @@ class Trainer:
 
     def val_mean_kt(self):
 
-            kts = []
-            for batch in tqdm(self.val_corpus.batches(20)):
+        self.model.eval()
 
-                batch.shuffle()
+        kts = []
+        for batch in tqdm(self.val_corpus.batches(20)):
 
-                yts = batch.sent_pos_tensors()
-                yps = self.model(batch)
+            batch.shuffle()
 
-                for yt, yp in zip(yts, yps):
-                    yt = np.argsort(yt.tolist())
-                    yp = np.argsort(yp.tolist())
-                    kt, _ = stats.kendalltau(yt, yp)
-                    kts.append(kt)
+            yts = batch.sent_pos_tensors()
+            yps = self.model(batch)
 
-            print(yts[0], yps[0])
+            for yt, yp in zip(yts, yps):
+                yt = np.argsort(yt.tolist())
+                yp = np.argsort(yp.tolist())
+                kt, _ = stats.kendalltau(yt, yp)
+                kts.append(kt)
 
-            return np.mean(kts)
+        print(yts[0], yps[0])
+
+        return np.mean(kts)
