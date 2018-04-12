@@ -4,6 +4,7 @@ import torch
 import os
 import ujson
 import attr
+import random
 
 import numpy as np
 
@@ -141,12 +142,13 @@ VECTORS = LazyVectors()
 @attr.s
 class Sentence:
 
+    position = attr.ib()
     tokens = attr.ib()
 
-    def index_var(self):
+    def token_idx_tensor(self):
         idx = [VECTORS.stoi(s) for s in self.tokens]
         idx = torch.LongTensor(idx)
-        return Variable(idx).type(itype)
+        return idx.type(itype)
 
 
 @attr.s
@@ -174,12 +176,22 @@ class Paragraph:
         json = ujson.loads(line.strip())
 
         return cls([
-            Sentence(s['token'])
-            for s in json['sentences']
+            Sentence(pos, s['token'])
+            for pos, s in enumerate(json['sentences'])
         ])
 
     def __len__(self):
         return len(self.sents)
+
+    def sent_pos_tensor(self):
+        pos = [sent.position / (len(self.sents)-1) for sent in self.sents]
+        pos = torch.FloatTensor(pos)
+        return pos.type(ftype)
+
+    def shuffle(self):
+        """Shuffle sents in-place.
+        """
+        random.shuffle(self.sents)
 
 
 @attr.s
@@ -187,13 +199,21 @@ class Batch:
 
     grafs = attr.ib()
 
-    def index_var(self, pad=50):
+    def token_idx_tensor(self, pad=50):
         """Token indexes, flattened to 1d series.
         """
         return pad_and_stack([
-            sent.index_var()
+            sent.token_idx_tensor()
             for graf in self.grafs
             for sent in graf.sents
+        ])
+
+    def sent_pos_tensor(self):
+        """Token indexes, flattened to 1d series.
+        """
+        return torch.cat([
+            graf.sent_pos_tensor()
+            for graf in self.grafs
         ])
 
     def repack_grafs(self, encoded):
@@ -204,6 +224,12 @@ class Batch:
             end = start + len(ab.sents)
             yield encoded[start:end]
             start = end
+
+    def shuffle(self):
+        """Shuffle all grafs in-place.
+        """
+        for graf in self.grafs:
+            graf.shuffle()
 
 
 class Corpus:
@@ -264,7 +290,7 @@ class SentEncoder(nn.Module):
         Args:
             batch (Batch)
         """
-        x, sizes = batch.index_var()
+        x, sizes = batch.token_idx_tensor()
 
         x = self.embeddings(x)
 
@@ -380,8 +406,8 @@ class Trainer:
 
                 self.optimizer.zero_grad()
 
-                print(self.model(batch))
-                yt, yp = self.train_batch(batch)
+                yt = batch.sent_pos_tensor()
+                yp = torch.cat(self.model(batch)).squeeze()
 
                 loss = F.mse_loss(yp, yt)
                 loss.backward()
@@ -391,39 +417,3 @@ class Trainer:
                 epoch_loss.append(loss.item())
 
             print('Loss: %f' % np.mean(epoch_loss))
-
-    def train_batch(self, batch):
-
-        sents = self.model.sent_encoder(batch)
-
-        grafs = []
-        for graf in batch.repack_grafs(sents):
-            perm = torch.randperm(len(graf)).type(itype)
-            grafs.append(graf[perm])
-
-        grafs = self.model.graf_encoder(grafs)
-
-        xs, ys = [], []
-        for graf, sents in zip(grafs, batch.repack_grafs(sents)):
-            for i in range(len(sents)):
-                xs.append(torch.cat([graf, sents[i]], dim=0))
-                ys.append(i / (len(sents)-1))
-
-        x = torch.stack(xs).type(ftype)
-        y = torch.FloatTensor(ys).type(ftype)
-
-        return y, self.model.regressor(x).squeeze()
-    #
-    # def predict(self, sents):
-    #
-    #     perm = torch.randperm(len(sents)).type(itype)
-    #     sents = sents[perm]
-    #
-    #     context = self.model.graf_encoder([sents])
-    #
-    #     x = torch.stack([
-    #         torch.cat([context, sents], dim=0)
-    #         for sent in sents
-    #     ])
-    #
-    #     return self.model.regressor(x)
