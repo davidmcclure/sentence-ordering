@@ -19,6 +19,7 @@ from glob import glob
 from boltons.iterutils import chunked_iter
 from tqdm import tqdm
 from itertools import islice
+from scipy import stats
 
 from sent_order.cuda import itype, ftype
 
@@ -208,13 +209,13 @@ class Batch:
             for sent in graf.sents
         ])
 
-    def sent_pos_tensor(self):
+    def sent_pos_tensors(self):
         """Token indexes, flattened to 1d series.
         """
-        return torch.cat([
+        return [
             graf.sent_pos_tensor()
             for graf in self.grafs
-        ])
+        ]
 
     def repack_grafs(self, encoded):
         """Repacking encoded sentences.
@@ -372,7 +373,9 @@ class Model(nn.Module):
             for sent in sents
         ])
 
-        return list(batch.repack_grafs(self.regressor(x)))
+        y = self.regressor(x)
+
+        return [graf.squeeze() for graf in batch.repack_grafs(y)]
 
 
 class Trainer:
@@ -406,8 +409,8 @@ class Trainer:
 
                 self.optimizer.zero_grad()
 
-                yt = batch.sent_pos_tensor()
-                yp = torch.cat(self.model(batch)).squeeze()
+                yt = torch.cat(batch.sent_pos_tensors())
+                yp = torch.cat(self.model(batch))
 
                 loss = F.mse_loss(yp, yt)
                 loss.backward()
@@ -417,3 +420,16 @@ class Trainer:
                 epoch_loss.append(loss.item())
 
             print('Loss: %f' % np.mean(epoch_loss))
+
+            kts = []
+            for batch in self.val_corpus.batches(batch_size):
+
+                yts = batch.sent_pos_tensors()
+                yps = self.model(batch)
+
+                kts += [
+                    stats.kendalltau(yt.tolist(), yp.tolist())[0]
+                    for yt, yp in zip(yts, yps)
+                ]
+
+            print(np.mean(kts))
