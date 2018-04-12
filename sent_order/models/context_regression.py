@@ -86,15 +86,6 @@ def pack(x, sizes, batch_first=True):
     return x, reorder
 
 
-def read_abstracts(path):
-    """Parse abstract JSON lines.
-    """
-    for path in glob(os.path.join(path, '*.json')):
-        with open(path) as fh:
-            for line in fh:
-                yield Abstract.from_line(line)
-
-
 class LazyVectors:
 
     unk_idx = 1
