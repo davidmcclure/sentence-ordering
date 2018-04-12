@@ -430,9 +430,10 @@ class Trainer:
                 yts = batch.sent_pos_tensors()
                 yps = self.model(batch)
 
-                kts += [
-                    stats.kendalltau(yt.tolist(), yp.tolist())[0]
-                    for yt, yp in zip(yts, yps)
-                ]
+                for yt, yp in zip(yts, yps):
+                    kt, _ = stats.kendalltau(yt.tolist(), yp.tolist())
+                    kts.append(kt)
+
+            print(yts[0], yps[0])
 
             return np.mean(kts)
