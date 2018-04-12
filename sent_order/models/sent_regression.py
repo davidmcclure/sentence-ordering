@@ -399,19 +399,19 @@ class Trainer:
         if torch.cuda.is_available():
             self.model.cuda()
 
-    def train(self, epochs=10, batch_size=20):
+    def train(self, epochs=10, batch_size=20, eval_every=1000):
 
         for epoch in range(epochs):
 
             print(f'\nEpoch {epoch}')
 
-            self.model.train()
+            batches = self.train_corpus.batches(batch_size)
 
             epoch_loss = []
-            for batch in tqdm(self.train_corpus.batches(batch_size)):
+            for i, batch in enumerate(tqdm(batches)):
 
+                self.model.train()
                 batch.shuffle()
-
                 self.optimizer.zero_grad()
 
                 yt = torch.cat(batch.sent_pos_tensors())
@@ -423,6 +423,9 @@ class Trainer:
                 self.optimizer.step()
 
                 epoch_loss.append(loss.item())
+
+                if i % eval_every == 0:
+                    print('Val KT: %f' % self.val_mean_kt())
 
             print('Loss: %f' % np.mean(epoch_loss))
             print('Val KT: %f' % self.val_mean_kt())
