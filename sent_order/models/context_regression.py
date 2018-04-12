@@ -420,9 +420,12 @@ class Trainer:
                 epoch_loss.append(loss.item())
 
             print('Loss: %f' % np.mean(epoch_loss))
+            print('Val KT: %f' % self.val_mean_kt())
+
+    def val_mean_kt(self):
 
             kts = []
-            for batch in self.val_corpus.batches(batch_size):
+            for batch in self.val_corpus.batches(20):
 
                 yts = batch.sent_pos_tensors()
                 yps = self.model(batch)
@@ -432,4 +435,4 @@ class Trainer:
                     for yt, yp in zip(yts, yps)
                 ]
 
-            print(np.mean(kts))
+            return np.mean(kts)
