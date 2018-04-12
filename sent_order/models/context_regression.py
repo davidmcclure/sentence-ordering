@@ -156,7 +156,7 @@ class Paragraph:
 
     @classmethod
     def read_arxiv(cls, path, scount=None):
-        """Wrap parsed arXiv abstrcts as paragraphs.
+        """Wrap parsed arXiv abstracts as paragraphs.
         """
         for path in glob(os.path.join(path, '*.json')):
             for line in open(path):
@@ -274,7 +274,6 @@ class SentEncoder(nn.Module):
 
         # Cat forward + backward hidden layers.
         out = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
-        # out = torch.cat(hn, dim=1)
 
         return out[reorder]
 
@@ -305,7 +304,6 @@ class GrafEncoder(nn.Module):
 
         # Cat forward + backward hidden layers.
         out = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
-        # out = torch.cat(hn, dim=1)
 
         return out[reorder]
 
@@ -331,6 +329,24 @@ class Model(nn.Module):
         self.sent_encoder = SentEncoder(VECTORS.loader.dim, se_dim)
         self.graf_encoder = GrafEncoder(se_dim*2, ge_dim)
         self.regressor = Regressor(se_dim*2 + ge_dim*2, lin_dim)
+
+    def forward(self, batch):
+        """Given a set of shuffled paragraphs, predict orderings.
+        """
+        # Batch-encode sents.
+        sents = self.sent_encoder(batch)
+
+        # Batch-encode grafs.
+        grafs = list(batch.repack_grafs(sents))
+        grafs = self.graf_encoder(grafs)
+
+        x = torch.stack([
+            torch.cat([graf, sent], dim=0)
+            for graf, sents in zip(grafs, batch.repack_grafs(sents))
+            for sent in sents
+        ])
+
+        return list(batch.repack_grafs(self.regressor(x)))
 
 
 class Trainer:
@@ -364,7 +380,8 @@ class Trainer:
 
                 self.optimizer.zero_grad()
 
-                yt, yp = self.eval_batch(batch)
+                print(self.model(batch))
+                yt, yp = self.train_batch(batch)
 
                 loss = F.mse_loss(yp, yt)
                 loss.backward()
@@ -375,16 +392,7 @@ class Trainer:
 
             print('Loss: %f' % np.mean(epoch_loss))
 
-            for batch in tqdm(self.val_corpus.batches(batch_size)):
-
-                yts, yps = self.eval_batch(batch)
-                yts = batch.repack_grafs(yts)
-                yps = batch.repack_grafs(yps)
-
-                for yt, yp in zip(yts, yps):
-                    print(yt, yp)
-
-    def eval_batch(self, batch):
+    def train_batch(self, batch):
 
         sents = self.model.sent_encoder(batch)
 
