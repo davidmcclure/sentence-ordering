@@ -403,6 +403,8 @@ class Trainer:
             epoch_loss = []
             for batch in tqdm(self.train_corpus.batches(batch_size)):
 
+                batch.shuffle()
+
                 self.optimizer.zero_grad()
 
                 yt = torch.cat(batch.sent_pos_tensors())
@@ -422,6 +424,8 @@ class Trainer:
 
             kts = []
             for batch in tqdm(self.val_corpus.batches(20)):
+
+                batch.shuffle()
 
                 yts = batch.sent_pos_tensors()
                 yps = self.model(batch)
