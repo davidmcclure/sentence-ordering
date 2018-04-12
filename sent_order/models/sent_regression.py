@@ -40,10 +40,9 @@ def pad_and_stack(xs, pad_size=None):
     padded, sizes = [], []
     for x in xs:
 
-        # TODO
         # Ensure length > 0.
-        # if len(x) == 0:
-            # x = x.new(1).zero_()
+        if len(x) == 0:
+            x = x.new(1).zero_()
 
         if x.dim() == 1:
             padding = (0, pad_size-len(x))
