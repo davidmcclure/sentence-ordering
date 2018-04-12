@@ -431,7 +431,9 @@ class Trainer:
                 yps = self.model(batch)
 
                 for yt, yp in zip(yts, yps):
-                    kt, _ = stats.kendalltau(yt.tolist(), yp.tolist())
+                    yt = np.argsort(yt.tolist())
+                    yp = np.argsort(yp.tolist())
+                    kt, _ = stats.kendalltau(yt, yp)
                     kts.append(kt)
 
             print(yts[0], yps[0])
