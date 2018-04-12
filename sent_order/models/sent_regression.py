@@ -399,7 +399,7 @@ class Trainer:
         if torch.cuda.is_available():
             self.model.cuda()
 
-    def train(self, epochs=10, batch_size=20, eval_every=1000):
+    def train(self, epochs=10, batch_size=20):
 
         for epoch in range(epochs):
 
@@ -424,9 +424,6 @@ class Trainer:
 
                 epoch_loss.append(loss.item())
 
-                if i % eval_every == 0:
-                    print('Val KT: %f' % self.val_mean_kt())
-
             print('Loss: %f' % np.mean(epoch_loss))
             print('Val KT: %f' % self.val_mean_kt())
 
@@ -443,8 +440,8 @@ class Trainer:
             yps = self.model(batch)
 
             for yt, yp in zip(yts, yps):
-                yt = np.argsort(yt.tolist())
-                yp = np.argsort(yp.tolist())
+                yt = np.argsort(yt.tolist()).argsort()
+                yp = np.argsort(yp.tolist()).argsort()
                 kt, _ = stats.kendalltau(yt, yp)
                 kts.append(kt)
 
