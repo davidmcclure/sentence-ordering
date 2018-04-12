@@ -390,7 +390,8 @@ class Trainer:
 
         self.optimizer = optim.Adam(params, lr=lr)
 
-        # TODO: CUDA
+        if torch.cuda.is_available():
+            self.model.cuda()
 
     def train(self, epochs=10, batch_size=20):
 
