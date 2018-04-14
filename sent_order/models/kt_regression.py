@@ -351,8 +351,8 @@ class Model(nn.Module):
 
 class Trainer:
 
-    def __init__(self, train_path, val_path, train_skim=None, val_skim=None,
-        lr=1e-3, *args, **kwargs):
+    def __init__(self, train_path, val_path, model_dir, train_skim=None,
+        val_skim=None, lr=1e-3, *args, **kwargs):
 
         self.train_corpus = Corpus(train_path, train_skim)
         self.val_corpus = Corpus(val_path, val_skim)
@@ -366,12 +366,12 @@ class Trainer:
 
         self.model = Model(*args, **kwargs)
 
-        params = [p for p in self.model.parameters() if p.requires_grad]
-
-        self.optimizer = optim.Adam(params, lr=lr)
+        self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
 
         if torch.cuda.is_available():
             self.model.cuda()
+
+        self.model_dir = model_dir
 
     def train(self, epochs=10, batch_size=20):
 
@@ -399,6 +399,8 @@ class Trainer:
             print('Loss: %f' % np.mean(epoch_loss))
             print('Val MSE: %f' % self.val_mse())
 
+            self.checkpoint(epoch)
+
     def val_mse(self):
 
         self.model.eval()
@@ -410,3 +412,8 @@ class Trainer:
             yts.append(yt)
 
         return F.mse_loss(torch.cat(yps), torch.cat(yts))
+
+    def checkpoint(self, epoch):
+        os.makedirs(self.model_dir, exist_ok=True)
+        path = os.path.join(self.model_dir, f'ktreg.{epoch}.bin')
+        torch.save(self.model, path)
