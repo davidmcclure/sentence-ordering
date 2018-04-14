@@ -348,6 +348,20 @@ class Model(nn.Module):
 
         return self.regressor(x), y
 
+    def bpc_pairs(self, batch):
+        """Permuate each graf, predict KT. Return tensor of consecutive
+        (correct, permuted) predictions.
+        """
+        # Batch-encode sents.
+        sents = self.sent_encoder(batch)
+
+        x, y = [], []
+        for graf in batch.repack_grafs(sents):
+            x.append(graf)
+            x.append(graf[torch.randperm(len(graf))])
+
+        return self.regressor(x)
+
 
 class Trainer:
 
@@ -397,21 +411,25 @@ class Trainer:
                 epoch_loss.append(loss.item())
 
             print('Loss: %f' % np.mean(epoch_loss))
-            print('Val MSE: %f' % self.val_mse())
+            print('Val MSE: %f' % self.val_bpc_accuracy())
 
             self.checkpoint(epoch)
 
-    def val_mse(self):
+    def val_bpc_accuracy(self):
 
         self.model.eval()
 
-        yps, yts = [], []
-        for batch in tqdm(self.val_corpus.batches(20)):
-            yp, yt = self.model.train_batch(batch)
-            yps.append(yp)
-            yts.append(yt)
+        pairs = torch.cat([
+            self.model.bpc_pairs(batch)
+            for batch in tqdm(self.val_corpus.batches(20))
+        ])
 
-        return F.mse_loss(torch.cat(yps), torch.cat(yts))
+        correct = 0
+        for gold, perm in chunked_iter(pairs.tolist(), 2):
+            if gold < perm:
+                correct += 1
+
+        return correct / (len(pairs)/2)
 
     def checkpoint(self, epoch):
         os.makedirs(self.model_dir, exist_ok=True)
