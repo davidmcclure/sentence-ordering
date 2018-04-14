@@ -72,12 +72,13 @@ def pack(x, sizes, batch_first=True):
     # Get indexes for sorted sizes.
     size_sort = np.argsort(sizes)[::-1].tolist()
 
-    # Sort the tensor by size.
+    # Sort tensor by size.
     x = x[torch.LongTensor(size_sort).type(itype)]
 
     # Sort sizes descending.
     sizes = np.array(sizes)[size_sort].tolist()
 
+    # Pack the sequences.
     x = pack_padded_sequence(x, sizes, batch_first)
 
     # Indexes to restore original order.
@@ -310,7 +311,7 @@ class Regressor(nn.Module):
         x = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
         x = x[reorder]
 
-        x = F.relu(self.hidden(x
+        x = F.relu(self.hidden(x))
         x = self.out(x).squeeze()
 
         return x
@@ -396,24 +397,16 @@ class Trainer:
                 epoch_loss.append(loss.item())
 
             print('Loss: %f' % np.mean(epoch_loss))
-#
-#     def print_val_metrics(self):
-#
-#         self.model.eval()
-#
-#         kts = []
-#         for batch in tqdm(self.val_corpus.batches(20)):
-#
-#             batch.shuffle()
-#
-#             yts = batch.sent_pos_tensors()
-#             yps = self.model(batch)
-#
-#             for yt, yp in zip(yts, yps):
-#                 yt = np.argsort(yt.tolist()).argsort()
-#                 yp = np.argsort(yp.tolist()).argsort()
-#                 kt, _ = stats.kendalltau(yt, yp)
-#                 kts.append(kt)
-#
-#         print('Val KT: %f' % np.mean(kts))
-#         print('Val PMR: %f' % (kts.count(1) / len(kts)))
+            print('Val MSE: %f' % self.val_mse())
+
+    def val_mse(self):
+
+        self.model.eval()
+
+        yps, yts = [], []
+        for batch in tqdm(self.val_corpus.batches(20)):
+            yp, yt = self.model.train_batch(batch)
+            yps.append(yp)
+            yts.append(yt)
+
+        return F.mse_loss(torch.cat(yps), torch.cat(yts))
