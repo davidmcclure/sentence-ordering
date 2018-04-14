@@ -22,6 +22,7 @@ from itertools import islice
 from scipy import stats
 
 from sent_order.cuda import itype, ftype
+from sent_order.perms import sample_perms_at_dist
 
 
 def pad_and_stack(xs, pad_size=None):
@@ -189,13 +190,13 @@ class Batch:
             for sent in graf.sents
         ])
 
-    def repack_grafs(self, encoded):
+    def repack_grafs(self, sents):
         """Repacking encoded sentences.
         """
         start = 0
         for ab in self.grafs:
             end = start + len(ab.sents)
-            yield encoded[start:end]
+            yield sents[start:end]
             start = end
 
 
@@ -275,9 +276,9 @@ class SentEncoder(nn.Module):
         return out[reorder]
 
 
-class GrafEncoder(nn.Module):
+class Regressor(nn.Module):
 
-    def __init__(self, input_dim, lstm_dim):
+    def __init__(self, input_dim, lstm_dim, hidden_dim):
         """Initialize the LSTM.
         """
         super().__init__()
@@ -288,6 +289,9 @@ class GrafEncoder(nn.Module):
             bidirectional=True,
             batch_first=True,
         )
+
+        self.hidden = nn.Linear(lstm_dim*2, hidden_dim)
+        self.out = nn.Linear(hidden_dim, 1)
 
         self.dropout = nn.Dropout()
 
@@ -303,40 +307,45 @@ class GrafEncoder(nn.Module):
         hn = self.dropout(hn)
 
         # Cat forward + backward hidden layers.
-        out = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
+        x = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
+        x = x[reorder]
 
-        return out[reorder]
+        x = F.relu(self.hidden(x
+        x = self.out(x).squeeze()
+
+        return x
 
 
 class Model(nn.Module):
 
-    def __init__(self, se_dim=500, ge_dim=500, lin_dim=200):
+    def __init__(self, sent_dim=500, graf_dim=500, hidden_dim=500):
 
         super().__init__()
 
-        self.sent_encoder = SentEncoder(VECTORS.loader.dim, se_dim)
-        self.graf_encoder = GrafEncoder(se_dim*2, ge_dim)
-        self.regressor = Regressor(se_dim*2 + ge_dim*2, lin_dim)
+        self.sent_encoder = SentEncoder(VECTORS.loader.dim, sent_dim)
+        self.regressor = Regressor(sent_dim*2, graf_dim, hidden_dim)
 
-    def forward(self, batch):
-        """Given a set of shuffled paragraphs, predict orderings.
+    def train_batch(self, batch):
+        """Encode sentences, generate permutations, regress KTs.
+
+        Returns: y pred, y true
         """
         # Batch-encode sents.
         sents = self.sent_encoder(batch)
 
-        # Batch-encode grafs.
-        grafs = list(batch.repack_grafs(sents))
-        grafs = self.graf_encoder(grafs)
+        x, y = [], []
+        for graf in batch.repack_grafs(sents):
 
-        x = torch.stack([
-            torch.cat([graf, sent], dim=0)
-            for graf, sents in zip(grafs, batch.repack_grafs(sents))
-            for sent in sents
-        ])
+            perms, kt = sample_perms_at_dist(len(graf), random.random())
 
-        y = self.regressor(x)
+            for perm in perms:
+                perm = torch.LongTensor(perm).type(itype)
+                x.append(graf[perm])
+                y.append(kt)
 
-        return [graf.squeeze() for graf in batch.repack_grafs(y)]
+        y = torch.FloatTensor(y).type(ftype)
+
+        return self.regressor(x), y
 
 
 class Trainer:
@@ -363,7 +372,7 @@ class Trainer:
         if torch.cuda.is_available():
             self.model.cuda()
 
-    def train(self, epochs=10, batch_size=20, eval_every=1000):
+    def train(self, epochs=10, batch_size=20):
 
         for epoch in range(epochs):
 
@@ -375,11 +384,9 @@ class Trainer:
             for i, batch in enumerate(tqdm(batches)):
 
                 self.model.train()
-                batch.shuffle()
                 self.optimizer.zero_grad()
 
-                yt = torch.cat(batch.sent_pos_tensors())
-                yp = torch.cat(self.model(batch))
+                yp, yt = self.model.train_batch(batch)
 
                 loss = F.mse_loss(yp, yt)
                 loss.backward()
@@ -388,29 +395,25 @@ class Trainer:
 
                 epoch_loss.append(loss.item())
 
-                if i > 0 and i % eval_every == 0:
-                    self.print_val_metrics()
-
             print('Loss: %f' % np.mean(epoch_loss))
-            self.print_val_metrics()
-
-    def print_val_metrics(self):
-
-        self.model.eval()
-
-        kts = []
-        for batch in tqdm(self.val_corpus.batches(20)):
-
-            batch.shuffle()
-
-            yts = batch.sent_pos_tensors()
-            yps = self.model(batch)
-
-            for yt, yp in zip(yts, yps):
-                yt = np.argsort(yt.tolist()).argsort()
-                yp = np.argsort(yp.tolist()).argsort()
-                kt, _ = stats.kendalltau(yt, yp)
-                kts.append(kt)
-
-        print('Val KT: %f' % np.mean(kts))
-        print('Val PMR: %f' % (kts.count(1) / len(kts)))
+#
+#     def print_val_metrics(self):
+#
+#         self.model.eval()
+#
+#         kts = []
+#         for batch in tqdm(self.val_corpus.batches(20)):
+#
+#             batch.shuffle()
+#
+#             yts = batch.sent_pos_tensors()
+#             yps = self.model(batch)
+#
+#             for yt, yp in zip(yts, yps):
+#                 yt = np.argsort(yt.tolist()).argsort()
+#                 yp = np.argsort(yp.tolist()).argsort()
+#                 kt, _ = stats.kendalltau(yt, yp)
+#                 kts.append(kt)
+#
+#         print('Val KT: %f' % np.mean(kts))
+#         print('Val PMR: %f' % (kts.count(1) / len(kts)))

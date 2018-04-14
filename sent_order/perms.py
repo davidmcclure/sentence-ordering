@@ -38,29 +38,29 @@ def random_perm_at_dist(size, dist):
     return tuple(perm)
 
 
-def sample_uniform_perms(size, skim=0.25, maxn=10):
-    """Sample N perms, uniformly distributed across a skimmed KT interval.
-    """
-    max_dist = max_perm_dist(size)
+# def sample_uniform_perms(size, skim=0.25, maxn=10):
+#     """Sample N perms, uniformly distributed across a skimmed KT interval.
+#     """
+#     max_dist = max_perm_dist(size)
+#
+#     max_sample_dist = math.ceil(max_dist * skim)
+#
+#     # At most, 1 sample for each possible distance.
+#     n = min(maxn, max_dist+1)
+#
+#     dists = np.linspace(0, max_sample_dist, maxn, dtype=int).round()
+#
+#     perms = [
+#         random_perm_at_dist(size, int(d))
+#         for d in dists
+#     ]
+#
+#     kts = dists / max_dist
+#
+#     return perms, kts
 
-    max_sample_dist = math.ceil(max_dist * skim)
 
-    # At most, 1 sample for each possible distance.
-    n = min(maxn, max_dist+1)
-
-    dists = np.linspace(0, max_sample_dist, maxn, dtype=int).round()
-
-    perms = [
-        random_perm_at_dist(size, int(d))
-        for d in dists
-    ]
-
-    kts = dists / max_dist
-
-    return perms, kts
-
-
-def sample_perms_at_dist(size, offset, maxn=10):
+def sample_perms_at_dist(size, offset, n=10):
     """Sample N perms at a given KT ratio offset.
     """
     max_dist = max_perm_dist(size)
@@ -69,9 +69,9 @@ def sample_perms_at_dist(size, offset, maxn=10):
 
     perms = [
         random_perm_at_dist(size, sample_dist)
-        for _ in range(maxn)
+        for _ in range(n)
     ]
 
     kt = sample_dist / max_dist
 
-    return set(perms), kt
+    return perms, kt
