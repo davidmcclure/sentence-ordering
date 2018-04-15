@@ -387,7 +387,7 @@ class Trainer:
 
         self.model_dir = model_dir
 
-    def train(self, epochs=10, batch_size=20):
+    def train(self, epochs=10, batch_size=20, eval_every=500):
 
         for epoch in range(epochs):
 
@@ -409,6 +409,9 @@ class Trainer:
                 self.optimizer.step()
 
                 epoch_loss.append(loss.item())
+
+                if i > 0 and i % eval_every == 0:
+                    print('Val BPC: %f' % self.val_bpc_accuracy())
 
             print('Loss: %f' % np.mean(epoch_loss))
             print('Val BPC: %f' % self.val_bpc_accuracy())
