@@ -140,8 +140,8 @@ class Sentence:
 
     def token_idx_tensor(self):
         idx = [VECTORS.stoi(s) for s in self.tokens]
-        idx = torch.LongTensor(idx)
-        return idx.type(itype)
+        idx = torch.LongTensor(idx).type(itype)
+        return idx
 
 
 @attr.s
@@ -355,7 +355,7 @@ class Model(nn.Module):
         # Batch-encode sents.
         sents = self.sent_encoder(batch)
 
-        x, y = [], []
+        x = []
         for graf in batch.repack_grafs(sents):
             x.append(graf)
             x.append(graf[torch.randperm(len(graf))])
@@ -398,8 +398,8 @@ class Trainer:
             epoch_loss = []
             for i, batch in enumerate(tqdm(batches)):
 
-                self.model.train()
                 self.optimizer.zero_grad()
+                self.model.train()
 
                 yp, yt = self.model.train_batch(batch)
 
@@ -411,7 +411,7 @@ class Trainer:
                 epoch_loss.append(loss.item())
 
             print('Loss: %f' % np.mean(epoch_loss))
-            print('Val MSE: %f' % self.val_bpc_accuracy())
+            print('Val BPC: %f' % self.val_bpc_accuracy())
 
             self.checkpoint(epoch)
 
@@ -419,13 +419,12 @@ class Trainer:
 
         self.model.eval()
 
-        pairs = torch.cat([
-            self.model.bpc_pairs(batch)
-            for batch in tqdm(self.val_corpus.batches(20))
-        ])
+        pairs = []
+        for batch in tqdm(self.val_corpus.batches(20)):
+            pairs += self.model.bpc_pairs(batch).tolist()
 
         correct = 0
-        for gold, perm in chunked_iter(pairs.tolist(), 2):
+        for gold, perm in chunked_iter(pairs, 2):
             if gold < perm:
                 correct += 1
 
