@@ -60,7 +60,7 @@ def random_perm_at_dist(size, dist):
 #     return perms, kts
 
 
-def sample_perms_at_dist(size, offset, n=10):
+def sample_perms_at_dist(size, offset, n=5):
     """Sample N perms at a given KT ratio offset.
     """
     max_dist = max_perm_dist(size)
