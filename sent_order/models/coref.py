@@ -169,3 +169,51 @@ class Corpus:
             vocab.update([t.text for t in doc.tokens])
 
         return vocab
+
+
+class DocEncoder(nn.Module):
+
+    def __init__(self, input_dim, lstm_dim):
+        """Initialize the LSTM.
+        """
+        super().__init__()
+
+        weights = VECTORS.weights()
+
+        self.embeddings = nn.Embedding(
+            weights.shape[0],
+            weights.shape[1],
+        )
+
+        self.embeddings.weight.data.copy_(weights)
+
+        self.lstm = nn.LSTM(
+            input_dim,
+            lstm_dim,
+            bidirectional=True,
+            batch_first=True,
+        )
+
+        self.dropout = nn.Dropout()
+
+    def forward(self, doc):
+        """Pad, pack, encode, reorder.
+
+        Args:
+            batch (Batch)
+        """
+        x = doc.token_idx_tensor()
+
+        # TODO: Batch?
+        x = x.unsqueeze(0)
+
+        x = self.embeddings(x)
+        # TODO: Char CNN.
+
+        _, (hn, _) = self.lstm(x)
+        hn = self.dropout(hn)
+
+        # Cat forward + backward hidden layers.
+        out = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
+
+        return out
