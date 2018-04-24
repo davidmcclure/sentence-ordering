@@ -97,7 +97,7 @@ class Document:
         return 'Document<%d tokens>' % len(self.tokens)
 
     def token_idx_tensor(self):
-        idx = [VECTORS.stoi(s) for s in self.tokens]
+        idx = [VECTORS.stoi(t.text) for t in self.tokens]
         idx = torch.LongTensor(idx).type(itype)
         return idx
 
@@ -159,3 +159,13 @@ class Corpus:
 
     def __init__(self, documents):
         self.documents = documents
+
+    def vocab(self):
+        """Build vocab list.
+        """
+        vocab = set()
+
+        for doc in self.documents:
+            vocab.update([t.text for t in doc.tokens])
+
+        return vocab
