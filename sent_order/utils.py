@@ -5,6 +5,8 @@ import numpy as np
 import os
 import random
 import torch
+import scandir
+import re
 
 from collections import OrderedDict
 
@@ -105,3 +107,14 @@ def sort_by_key(d, desc=False):
     items = sorted(d.items(), key=lambda x: x[0], reverse=desc)
 
     return OrderedDict(items)
+
+
+def scan_paths(root, pattern=None):
+    """Scan paths by regex.
+    """
+    for root, dirs, files in scandir.walk(root, followlinks=True):
+        for name in files:
+
+            # Match the pattern.
+            if not pattern or re.search(pattern, name):
+                yield os.path.join(root, name)

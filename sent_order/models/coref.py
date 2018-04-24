@@ -6,6 +6,7 @@ import ujson
 import attr
 import random
 import re
+import glob
 
 import numpy as np
 
@@ -18,11 +19,13 @@ from torch.nn import functional as F
 from cached_property import cached_property
 from glob import glob
 from boltons.iterutils import chunked_iter
+from collections import defaultdict
 from tqdm import tqdm
 from itertools import islice
 from scipy import stats
 
 from sent_order.cuda import itype, ftype
+from sent_order.utils import scan_paths
 
 
 def parse_int(text):
@@ -93,6 +96,11 @@ class Document:
     def __repr__(self):
         return 'Document<%d tokens>' % len(self.tokens)
 
+    def token_idx_tensor(self):
+        idx = [VECTORS.stoi(s) for s in self.tokens]
+        idx = torch.LongTensor(idx).type(itype)
+        return idx
+
 
 class GoldFile:
 
@@ -127,13 +135,27 @@ class GoldFile:
     def documents(self):
         """Group tokens by document.
         """
-        tokens = []
+        groups = defaultdict(list)
 
         for token in self.tokens():
+            groups[token.document_id].append(token)
 
-            if not tokens or token.document_id == tokens[-1].document_id:
-                tokens.append(token)
+        for tokens in groups.values():
+            yield Document(tokens)
 
-            else:
-                yield Document(tokens)
-                tokens = [token]
+
+class Corpus:
+
+    @classmethod
+    def from_files(cls, root):
+        """Load from globbed gold files.
+        """
+        docs = []
+        for path in tqdm(scan_paths(root, 'gold_conll$')):
+            gf = GoldFile(path)
+            docs += list(gf.documents())
+
+        return cls(docs)
+
+    def __init__(self, documents):
+        self.documents = documents
