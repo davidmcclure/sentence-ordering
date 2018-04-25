@@ -210,10 +210,7 @@ class DocEncoder(nn.Module):
         x = self.embeddings(x)
         # TODO: Char CNN.
 
-        _, (hn, _) = self.lstm(x)
-        hn = self.dropout(hn)
+        x, _ = self.lstm(x)
+        x = self.dropout(x)
 
-        # Cat forward + backward hidden layers.
-        out = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
-
-        return out
+        return x
