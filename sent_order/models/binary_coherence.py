@@ -411,11 +411,11 @@ class Trainer:
 
                 epoch_loss.append(loss.item())
 
-                # if i > 0 and i % eval_every == 0:
-                #     print('Val BPC: %f' % self.val_bpc_accuracy())
+                if i > 0 and i % eval_every == 0:
+                    print('Val BPC: %f' % self.val_bpc_accuracy())
 
             print('Loss: %f' % np.mean(epoch_loss))
-            # print('Val BPC: %f' % self.val_bpc_accuracy())
+            print('Val BPC: %f' % self.val_bpc_accuracy())
 
             self.checkpoint(epoch)
 
@@ -429,7 +429,7 @@ class Trainer:
 
         correct = 0
         for gold, perm in chunked_iter(pairs, 2):
-            if gold < perm:
+            if gold[0] > perm[0]:
                 correct += 1
 
         return correct / (len(pairs)/2)
