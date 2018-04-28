@@ -178,11 +178,28 @@ class Corpus:
         return vocab
 
 
+class SpanAttention(nn.Module):
+
+    def __init__(self, state_dim, hidden_dim):
+
+        super().__init__()
+
+        self.score = nn.Sequential(
+            nn.Linear(state_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1),
+        )
+
+    def forward(self, states):
+        return F.softmax(self.score(states).squeeze())
+
+
 class DocEncoder(nn.Module):
 
     def __init__(self, input_dim, lstm_dim):
-        """Initialize the LSTM.
-        """
+
         super().__init__()
 
         weights = VECTORS.weights()
@@ -202,6 +219,8 @@ class DocEncoder(nn.Module):
         )
 
         self.dropout = nn.Dropout()
+
+        self.span_attention = SpanAttention(lstm_dim*2, 150)
 
     def forward(self, doc):
         """Pad, pack, encode, reorder.
@@ -223,7 +242,8 @@ class DocEncoder(nn.Module):
         for n in range(1, 11):
             for w in windowed_iter(range(len(doc)), n):
                 states = x[0][w[0]:w[-1]+1]
-                span = Span(document=doc, i1=w[0], i2=w[-1], states=states)
-                print(span)
+                attn = self.span_attention(states)
+                # span = Span(document=doc, i1=w[0], i2=w[-1], states=states)
+                print(attn)
 
         return x
