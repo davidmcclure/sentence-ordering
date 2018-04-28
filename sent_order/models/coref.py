@@ -233,17 +233,20 @@ class DocEncoder(nn.Module):
         # TODO: Batch?
         x = x.unsqueeze(0)
 
-        x = self.embeddings(x)
+        embeds = self.embeddings(x)
         # TODO: Char CNN.
 
-        x, _ = self.lstm(x)
+        x, _ = self.lstm(embeds)
         x = self.dropout(x)
 
         for n in range(1, 11):
             for w in windowed_iter(range(len(doc)), n):
-                states = x[0][w[0]:w[-1]+1]
-                attn = self.span_attention(states)
-                # span = Span(document=doc, i1=w[0], i2=w[-1], states=states)
+
+                i1, i2 = w[0], w[-1]
+                tokens = embeds[0][i1:i2+1]
+                states = x[0][i1:i2+1]
+
+                attn = sum(tokens * self.span_attention(states))
                 print(attn)
 
         return x
