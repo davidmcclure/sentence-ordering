@@ -187,6 +187,24 @@ class SpanAttention(nn.Module):
         return F.softmax(self.score(states).squeeze(), dim=0)
 
 
+class SpanScorer(nn.Module):
+
+    def __init__(self, input_dim, hidden_dim):
+
+        super().__init__()
+
+        self.score = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1),
+        )
+
+    def forward(self, g):
+        return self.score(g)
+
+
 class DocEncoder(nn.Module):
 
     def __init__(self, input_dim, lstm_dim):
@@ -212,6 +230,7 @@ class DocEncoder(nn.Module):
         self.dropout = nn.Dropout()
 
         self.span_attention = SpanAttention(lstm_dim*2, 150)
+        self.span_scorer = SpanScorer(lstm_dim*2*2 + input_dim + 1, 150)
 
     def forward(self, doc):
         """Pad, pack, encode, reorder.
@@ -249,7 +268,10 @@ class DocEncoder(nn.Module):
                 g = torch.cat([states[0], states[-1], attn, size])
                 spans.append((i1, i2, g))
 
-        print(len(spans))
+        g = torch.stack([s[2] for s in spans])
+        sm = self.span_scorer(g)
+
+        print(sm)
 
         # score spans
         # skim top-scoring
