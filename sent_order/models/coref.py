@@ -91,11 +91,17 @@ class Token:
 
 class Document(UserList):
 
+    def __init__(self, tokens):
+        self.tokens = tokens
+
     def __repr__(self):
-        return 'Document<%d tokens>' % len(self)
+        return 'Document<%d tokens>' % len(self.tokens)
+
+    def __len__(self):
+        return len(self.tokens)
 
     def token_idx_tensor(self):
-        idx = [VECTORS.stoi(t.text) for t in self]
+        idx = [VECTORS.stoi(t.text) for t in self.tokens]
         idx = torch.LongTensor(idx).type(itype)
         return idx
 
@@ -165,7 +171,7 @@ class Corpus:
         vocab = set()
 
         for doc in self.documents:
-            vocab.update([t.text for t in doc])
+            vocab.update([t.text for t in doc.tokens])
 
         return vocab
 
@@ -316,13 +322,14 @@ class DocEncoder(nn.Module):
                 # TODO: Speaker / distance embeds.
                 x = torch.cat([gi, gj, gi*gj])
                 sa = self.pair_scorer(x)
-                ant_score.append((other, score))
+                ant_sa.append((other, sa))
 
             # Antecedents + 0 for epsilon.
             sij = [span[-1] + ant[-1] + sa for ant, sa in ant_sa] + [0]
-            sij = torch.FloatTensor(scores)
+            sij = torch.FloatTensor(sij)
 
             pred = F.softmax(sij.unsqueeze(0), dim=1)
+            print(pred)
 
             # get indexes gold antecedents in pred
             # sum probabilities from pred (this handles multiple antecedents)
