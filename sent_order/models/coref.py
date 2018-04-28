@@ -292,6 +292,7 @@ class DocEncoder(nn.Module):
                 g = torch.cat([states[0], states[-1], attn, size])
                 spans.append((i1, i2, g))
 
+        # Score spans.
         g = torch.stack([s[2] for s in spans])
         sm = self.span_scorer(g).squeeze().tolist()
 
@@ -307,13 +308,22 @@ class DocEncoder(nn.Module):
         spans = sorted(spans, key=lambda s: s[0])
 
         for i, span in enumerate(spans):
+
             # TODO: Just consider K antecedents.
+            ant_sa = []
             for other in spans[:i]:
                 gi, gj = span[2], other[2]
                 # TODO: Speaker / distance embeds.
                 x = torch.cat([gi, gj, gi*gj])
-                score = self.pair_scorer(x)
-                print(score)
+                sa = self.pair_scorer(x)
+                ant_score.append((other, score))
+
+            # Antecedents + 0 for epsilon.
+            sij = [span[-1] + ant[-1] + sa for ant, sa in ant_sa] + [0]
+            sij = torch.FloatTensor(scores)
+
+            pred = F.log_softmax(sij.unsqueeze(0), dim=1)
+            print(pred)
 
         # score spans
         # skim top-scoring
