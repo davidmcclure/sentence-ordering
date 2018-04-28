@@ -100,15 +100,6 @@ class Document(UserList):
         return idx
 
 
-@attr.s
-class Span:
-
-    document = attr.ib()
-    i1 = attr.ib()
-    i2 = attr.ib()
-    states = attr.ib()
-
-
 class GoldFile:
 
     def __init__(self, path):
@@ -193,7 +184,7 @@ class SpanAttention(nn.Module):
         )
 
     def forward(self, states):
-        return F.softmax(self.score(states).squeeze())
+        return F.softmax(self.score(states).squeeze(), dim=0)
 
 
 class DocEncoder(nn.Module):
@@ -239,6 +230,8 @@ class DocEncoder(nn.Module):
         x, _ = self.lstm(embeds)
         x = self.dropout(x)
 
+        # Generate and encode spans.
+        spans = []
         for n in range(1, 11):
             for w in windowed_iter(range(len(doc)), n):
 
@@ -246,7 +239,12 @@ class DocEncoder(nn.Module):
                 tokens = embeds[0][i1:i2+1]
                 states = x[0][i1:i2+1]
 
-                attn = sum(tokens * self.span_attention(states))
-                print(attn)
+                attn = self.span_attention(states).view(-1, 1)
+                attn = sum(tokens * attn)
 
-        return x
+                size = torch.FloatTensor([n])
+
+                g = torch.cat([states[0], states[-1], attn, size])
+                spans.append((i1, i2, g))
+
+        print(len(spans))
