@@ -323,10 +323,5 @@ class DocEncoder(nn.Module):
             sij = torch.FloatTensor(scores)
 
             pred = F.log_softmax(sij.unsqueeze(0), dim=1)
-            print(pred)
 
-        # score spans
-        # skim top-scoring
-        # generate pairs
-        # get pair embeddings
-        # score pairs, softmax
+        # TODO: How to get loss?
