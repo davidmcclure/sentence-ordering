@@ -239,12 +239,20 @@ class DocEncoder(nn.Module):
                 tokens = embeds[0][i1:i2+1]
                 states = x[0][i1:i2+1]
 
+                # Attend over raw word embeddings.
                 attn = self.span_attention(states).view(-1, 1)
                 attn = sum(tokens * attn)
 
+                # Include span size.
                 size = torch.FloatTensor([n])
 
                 g = torch.cat([states[0], states[-1], attn, size])
                 spans.append((i1, i2, g))
 
         print(len(spans))
+
+        # score spans
+        # skim top-scoring
+        # generate pairs
+        # get pair embeddings
+        # score pairs, softmax
