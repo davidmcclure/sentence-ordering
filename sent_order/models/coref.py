@@ -16,9 +16,10 @@ from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence
 from torch.nn import functional as F
 
+from collections import UserList
 from cached_property import cached_property
 from glob import glob
-from boltons.iterutils import chunked_iter
+from boltons.iterutils import chunked_iter, windowed_iter
 from collections import defaultdict
 from tqdm import tqdm
 from itertools import islice
@@ -88,18 +89,24 @@ class Token:
     coref_id = attr.ib()
 
 
-class Document:
-
-    def __init__(self, tokens):
-        self.tokens = tokens
+class Document(UserList):
 
     def __repr__(self):
-        return 'Document<%d tokens>' % len(self.tokens)
+        return 'Document<%d tokens>' % len(self)
 
     def token_idx_tensor(self):
-        idx = [VECTORS.stoi(t.text) for t in self.tokens]
+        idx = [VECTORS.stoi(t.text) for t in self]
         idx = torch.LongTensor(idx).type(itype)
         return idx
+
+
+@attr.s
+class Span:
+
+    document = attr.ib()
+    i1 = attr.ib()
+    i2 = attr.ib()
+    states = attr.ib()
 
 
 class GoldFile:
@@ -166,7 +173,7 @@ class Corpus:
         vocab = set()
 
         for doc in self.documents:
-            vocab.update([t.text for t in doc.tokens])
+            vocab.update([t.text for t in doc])
 
         return vocab
 
@@ -212,5 +219,11 @@ class DocEncoder(nn.Module):
 
         x, _ = self.lstm(x)
         x = self.dropout(x)
+
+        for n in range(1, 11):
+            for w in windowed_iter(range(len(doc)), n):
+                states = x[0][w[0]:w[-1]+1]
+                span = Span(document=doc, i1=w[0], i2=w[-1], states=states)
+                print(span)
 
         return x
