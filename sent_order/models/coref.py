@@ -322,6 +322,11 @@ class DocEncoder(nn.Module):
             sij = [span[-1] + ant[-1] + sa for ant, sa in ant_sa] + [0]
             sij = torch.FloatTensor(scores)
 
-            pred = F.log_softmax(sij.unsqueeze(0), dim=1)
+            pred = F.softmax(sij.unsqueeze(0), dim=1)
 
-        # TODO: How to get loss?
+            # get indexes gold antecedents in pred
+            # sum probabilities from pred (this handles multiple antecedents)
+            # log
+
+        # add up log-probabilities for each span
+        # negate this to get loss, backprop
