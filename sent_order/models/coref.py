@@ -138,6 +138,7 @@ class GoldFile:
         for token in self.tokens():
             groups[token.document_id].append(token)
 
+        # TODO: Randomly truncate up to 50 sents.
         for tokens in groups.values():
             yield Document(tokens)
 
@@ -205,6 +206,24 @@ class SpanScorer(nn.Module):
         return self.score(g)
 
 
+class PairScorer(nn.Module):
+
+    def __init__(self, input_dim, hidden_dim):
+
+        super().__init__()
+
+        self.score = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1),
+        )
+
+    def forward(self, x):
+        return self.score(x)
+
+
 class DocEncoder(nn.Module):
 
     def __init__(self, input_dim, lstm_dim):
@@ -229,8 +248,13 @@ class DocEncoder(nn.Module):
 
         self.dropout = nn.Dropout()
 
-        self.span_attention = SpanAttention(lstm_dim*2, 150)
-        self.span_scorer = SpanScorer(lstm_dim*2*2 + input_dim + 1, 150)
+        state_dim = lstm_dim * 2
+        span_dim = state_dim * 2 + input_dim + 1
+        pair_dim = span_dim * 3
+
+        self.span_attention = SpanAttention(state_dim, 150)
+        self.span_scorer = SpanScorer(span_dim, 150)
+        self.pair_scorer = PairScorer(pair_dim, 150)
 
     def forward(self, doc):
         """Pad, pack, encode, reorder.
@@ -269,9 +293,27 @@ class DocEncoder(nn.Module):
                 spans.append((i1, i2, g))
 
         g = torch.stack([s[2] for s in spans])
-        sm = self.span_scorer(g)
+        sm = self.span_scorer(g).squeeze().tolist()
 
-        print(sm)
+        # Sort spans by unary score.
+        span_score = sorted(zip(spans, sm), key=lambda p: p[1], reverse=True)
+
+        # Take top lambda*T spans, keeping score.
+        # TODO: Skip overlapping spans.
+        spans = [(i1, i2, g, score) for (i1, i2, g), score in span_score]
+        spans = spans[:round(len(doc)*0.4)]
+
+        # Sort spans by start index.
+        spans = sorted(spans, key=lambda s: s[0])
+
+        for i, span in enumerate(spans):
+            # TODO: Just consider K antecedents.
+            for other in spans[:i]:
+                gi, gj = span[2], other[2]
+                # TODO: Speaker / distance embeds.
+                x = torch.cat([gi, gj, gi*gj])
+                score = self.pair_scorer(x)
+                print(score)
 
         # score spans
         # skim top-scoring
