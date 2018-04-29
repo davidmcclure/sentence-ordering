@@ -363,7 +363,18 @@ class DocEncoder(nn.Module):
 
             # Get distribution over possible antecedents.
             pred = F.softmax(sij, dim=0)
-            print(pred)
+
+            gold_token_idxs = doc.antecedents.get((span[0], span[1]), [])
+
+            gold_idxs = [
+                i for i, (ant, _) in enumerate(ant_sa)
+                if (ant[0], ant[1]) in gold_token_idxs
+            ]
+
+            if not gold_idxs:
+                gold_idxs = [len(pred-1)]
+
+            print(gold_idxs)
 
             # get indexes gold antecedents in pred
             # sum probabilities from pred (this handles multiple antecedents)
