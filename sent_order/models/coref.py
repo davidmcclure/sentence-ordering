@@ -338,7 +338,7 @@ class Coref(nn.Module):
                 attn = sum(tokens * attn)
 
                 # Include span size.
-                size = torch.FloatTensor([n])
+                size = torch.FloatTensor([n]).type(ftype)
 
                 g = torch.cat([states[0], states[-1], attn, size])
                 spans.append((i1, i2, g))
@@ -371,7 +371,7 @@ class Coref(nn.Module):
 
             # Antecedents + 0 for epsilon.
             sij = [i[-1] + j[-1] + sa for j, sa in j_sa] + [0]
-            sij = torch.FloatTensor(sij)
+            sij = torch.FloatTensor(sij).type(ftype)
             sij.requires_grad = True
 
             # Get distribution over possible antecedents.
@@ -395,6 +395,9 @@ class Trainer:
         self.model = Coref(300, 200)
 
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
+
+        if torch.cuda.is_available():
+            self.model.cuda()
 
     def train_epoch(self, epoch):
 
