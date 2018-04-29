@@ -134,7 +134,7 @@ class Document(UserList):
         """Map span (start, end) -> list of (start, end) of antecedents.
         """
         return {
-            span: spans[:i+1]
+            span: set(spans[:i+1])
             for _, spans in self.coref_id_to_spans.items()
             for i, span in enumerate(spans[1:])
         }
@@ -370,23 +370,6 @@ class Coref(nn.Module):
                 pred, # distribution over y(i)
             )
 
-            # gold_token_idxs = doc.antecedents.get((span[0], span[1]), [])
-            #
-            # gold_idxs = [
-            #     i for i, (ant, _) in enumerate(ant_sa)
-            #     if (ant[0], ant[1]) in gold_token_idxs
-            # ]
-            #
-            # if not gold_idxs:
-            #     gold_idxs = [len(pred-1)]
-
-            # get indexes gold antecedents in pred
-            # sum probabilities from pred (this handles multiple antecedents)
-            # log
-
-        # add up log-probabilities for each span
-        # negate this to get loss, backprop
-
 
 class Trainer:
 
@@ -401,7 +384,32 @@ class Trainer:
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
 
     def train_epoch(self, epoch):
-        print(epoch)
+
+        print(f'\nEpoch {epoch}')
+
+        self.model.train()
+
+        for doc in self.train_corpus.documents:
+
+            loss = []
+            for i, yi, pred in self.model(doc):
+
+                gold_span_idxs = doc.antecedents.get(i, [])
+
+                gold_pred_idxs = [
+                    j for j, span in enumerate(yi)
+                    if span in gold_span_idxs
+                ]
+
+                if not gold_pred_idxs:
+                    gold_pred_idxs = [len(pred)-1]
+
+                loss.append(sum(pred[i] for i in gold_pred_idxs).log())
+
+            loss = sum(loss) * -1
+            loss.backward()
+
+            self.optimizer.step()
 
     def train(self, epochs=10):
         for epoch in range(epochs):
