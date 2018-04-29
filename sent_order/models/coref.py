@@ -105,6 +105,39 @@ class Document(UserList):
         idx = torch.LongTensor(idx).type(itype)
         return idx
 
+    @cached_property
+    def coref_id_to_spans(self):
+        """Map coref id -> list of (start, end) token indexes.
+        """
+        id_to_idx = defaultdict(list)
+
+        for i, token in enumerate(self.tokens):
+
+            if not token.coref_id:
+                continue
+
+            spans = id_to_idx[token.coref_id]
+
+            if len(spans) and spans[-1][-1] == i-1:
+                spans[-1].append(i)
+
+            else:
+                spans.append([i])
+
+        return {
+            cid: [(s[0], s[-1]) for s in spans]
+            for cid, spans in id_to_idx.items()
+        }
+
+    @cached_property
+    def antecedents(self):
+        """Map span (start, end) -> list of (start, end) of antecedents.
+        """
+        return {
+            span: spans[:i+1]
+            for _, spans in self.coref_id_to_spans.items()
+            for i, span in enumerate(spans[1:])
+        }
 
 class GoldFile:
 
@@ -328,6 +361,7 @@ class DocEncoder(nn.Module):
             sij = [span[-1] + ant[-1] + sa for ant, sa in ant_sa] + [0]
             sij = torch.FloatTensor(sij)
 
+            # Get distribution over possible antecedents.
             pred = F.softmax(sij, dim=0)
             print(pred)
 
