@@ -336,11 +336,11 @@ class DocEncoder(nn.Module):
         sm = self.span_scorer(g).squeeze().tolist()
 
         # Sort spans by unary score.
-        span_score = sorted(zip(spans, sm), key=lambda p: p[1], reverse=True)
+        span_sm = sorted(zip(spans, sm), key=lambda p: p[1], reverse=True)
 
         # Take top lambda*T spans, keeping score.
         # TODO: Skip overlapping spans.
-        spans = [(i1, i2, g, score) for (i1, i2, g), score in span_score]
+        spans = [(i1, i2, g, sm) for (i1, i2, g), sm in span_sm]
         spans = spans[:round(len(doc)*0.4)]
 
         # Sort spans by start index.
