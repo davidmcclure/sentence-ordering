@@ -328,7 +328,7 @@ class DocEncoder(nn.Module):
             sij = [span[-1] + ant[-1] + sa for ant, sa in ant_sa] + [0]
             sij = torch.FloatTensor(sij)
 
-            pred = F.softmax(sij.unsqueeze(0), dim=1)
+            pred = F.softmax(sij, dim=0)
             print(pred)
 
             # get indexes gold antecedents in pred
