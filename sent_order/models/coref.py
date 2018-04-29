@@ -400,15 +400,11 @@ class Trainer:
         self.model.train()
 
         epoch_loss = 0
+        correct = 0
         for doc in tqdm(self.train_corpus.documents):
 
             loss = []
             for i, yi, pred in self.model(doc):
-
-                if i not in doc.mentions:
-                    continue
-
-                print(i)
 
                 gold_span_idxs = doc.antecedents.get(i, [])
 
@@ -422,13 +418,19 @@ class Trainer:
 
                 loss.append(sum(pred[i] for i in gold_pred_idxs).log())
 
-            if loss:
-                loss = sum(loss) * -1
-                loss.backward()
-                self.optimizer.step()
-                epoch_loss += loss.item()
+                for ix in gold_pred_idxs:
+                    if ix != len(pred)-1 and ix == pred.argmax().item():
+                        correct += 1
 
-        print(epoch_loss)
+            loss = sum(loss) * -1
+            loss.backward()
+
+            self.optimizer.step()
+
+            epoch_loss += loss.item()
+
+        print('Loss: %f' % epoch_loss)
+        print('Correct: %d' % correct)
 
     def train(self, epochs=10):
         for epoch in range(epochs):
