@@ -390,7 +390,8 @@ class Trainer:
 
         self.model.train()
 
-        for doc in self.train_corpus.documents:
+        epoch_loss = 0
+        for doc in tqdm(self.train_corpus.documents):
 
             loss = []
             for i, yi, pred in self.model(doc):
@@ -411,7 +412,10 @@ class Trainer:
             loss.backward()
 
             self.optimizer.step()
-            print(loss)
+
+            epoch_loss += loss.item()
+
+        print(epoch_loss)
 
     def train(self, epochs=10):
         for epoch in range(epochs):
