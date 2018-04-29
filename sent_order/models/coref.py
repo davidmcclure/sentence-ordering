@@ -16,6 +16,7 @@ from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence
 from torch.nn import functional as F
 
+from datetime import datetime as dt
 from collections import UserList
 from cached_property import cached_property
 from glob import glob
@@ -358,16 +359,23 @@ class Coref(nn.Module):
         # Sort spans by start index.
         spans = sorted(spans, key=lambda s: s[0])
 
+        x = []
+        for ix, i in enumerate(spans):
+            for j in spans[:ix]:
+                gi, gj = i[2], j[2]
+                x.append(torch.cat([gi, gj, gi*gj]))
+
+        x = torch.stack(x)
+        sa = self.pair_scorer(x).tolist()
+
+        c = 0
         for ix, i in enumerate(spans):
 
             # TODO: Just consider K antecedents.
             j_sa = []
             for j in spans[:ix]:
-                gi, gj = i[2], j[2]
-                # TODO: Speaker / distance embeds.
-                x = torch.cat([gi, gj, gi*gj])
-                sa = self.pair_scorer(x)
-                j_sa.append((j, sa))
+                j_sa.append((j, sa[c]))
+                c += 1
 
             # Antecedents + 0 for epsilon.
             sij = [i[-1] + j[-1] + sa for j, sa in j_sa] + [0]
