@@ -230,6 +230,7 @@ class SpanAttention(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, 1),
+            # nn.ReLU(),
         )
 
     def forward(self, states):
@@ -248,6 +249,7 @@ class SpanScorer(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, 1),
+            # nn.ReLU(),
         )
 
     def forward(self, g):
@@ -266,6 +268,7 @@ class PairScorer(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, 1),
+            # nn.ReLU(),
         )
 
     def forward(self, x):
