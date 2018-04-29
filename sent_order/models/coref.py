@@ -360,6 +360,7 @@ class Coref(nn.Module):
             # Antecedents + 0 for epsilon.
             sij = [span[-1] + ant[-1] + sa for ant, sa in ant_sa] + [0]
             sij = torch.FloatTensor(sij)
+            sij.requires_grad = True
 
             # Get distribution over possible antecedents.
             pred = F.softmax(sij, dim=0)
@@ -410,6 +411,7 @@ class Trainer:
             loss.backward()
 
             self.optimizer.step()
+            print(loss)
 
     def train(self, epochs=10):
         for epoch in range(epochs):
