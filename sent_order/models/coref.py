@@ -260,7 +260,7 @@ class PairScorer(nn.Module):
         )
 
     def forward(self, x):
-        return self.score(x)
+        return self.score(x).view(-1)
 
 
 class Coref(nn.Module):
@@ -314,7 +314,7 @@ class Coref(nn.Module):
 
         # Generate and encode spans.
         spans = []
-        for n in range(1, 11):
+        for n in range(1, 5):
             for w in windowed_iter(range(len(doc)), n):
 
                 i1, i2 = w[0], w[-1]
@@ -346,19 +346,19 @@ class Coref(nn.Module):
         # Sort spans by start index.
         spans = sorted(spans, key=lambda s: s[0])
 
-        for i, span in enumerate(spans):
+        for ix, i in enumerate(spans):
 
             # TODO: Just consider K antecedents.
-            ant_sa = []
-            for other in spans[:i]:
-                gi, gj = span[2], other[2]
+            j_sa = []
+            for j in spans[:ix]:
+                gi, gj = i[2], j[2]
                 # TODO: Speaker / distance embeds.
                 x = torch.cat([gi, gj, gi*gj])
                 sa = self.pair_scorer(x)
-                ant_sa.append((other, sa))
+                j_sa.append((j, sa))
 
             # Antecedents + 0 for epsilon.
-            sij = [span[-1] + ant[-1] + sa for ant, sa in ant_sa] + [0]
+            sij = [i[-1] + j[-1] + sa for j, sa in j_sa] + [0]
             sij = torch.FloatTensor(sij)
             sij.requires_grad = True
 
@@ -366,8 +366,8 @@ class Coref(nn.Module):
             pred = F.softmax(sij, dim=0)
 
             yield (
-                (span[0], span[1]), # i
-                [(ant[0], ant[1]) for ant, _ in ant_sa], # y(i)
+                (i[0], i[1]), # i
+                [(j[0], j[1]) for j, _ in j_sa], # y(i)
                 pred, # distribution over y(i)
             )
 
