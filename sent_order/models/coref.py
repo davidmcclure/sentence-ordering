@@ -263,7 +263,7 @@ class PairScorer(nn.Module):
         return self.score(x)
 
 
-class DocEncoder(nn.Module):
+class Coref(nn.Module):
 
     def __init__(self, input_dim, lstm_dim):
 
@@ -386,3 +386,23 @@ class DocEncoder(nn.Module):
 
         # add up log-probabilities for each span
         # negate this to get loss, backprop
+
+
+class Trainer:
+
+    def __init__(self, train_root, lr=1e-3):
+
+        self.train_corpus = Corpus.from_files(train_root)
+
+        VECTORS.set_vocab(self.train_corpus.vocab())
+
+        self.model = Coref(300, 200)
+
+        self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
+
+    def train_epoch(self, epoch):
+        print(epoch)
+
+    def train(self, epochs=10):
+        for epoch in range(epochs):
+            self.train_epoch(epoch)
