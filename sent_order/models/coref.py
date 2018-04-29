@@ -106,7 +106,7 @@ class Document(UserList):
         return idx
 
     @cached_property
-    def coref_id_to_spans(self):
+    def coref_id_to_mentions(self):
         """Map coref id -> list of (start, end) token indexes.
         """
         id_to_idx = defaultdict(list)
@@ -130,12 +130,21 @@ class Document(UserList):
         }
 
     @cached_property
+    def mentions(self):
+        """Set of gold mention spans.
+        """
+        return set([
+            mention for cluster in self.coref_id_to_mentions.values()
+            for mention in cluster
+        ])
+
+    @cached_property
     def antecedents(self):
         """Map span (start, end) -> list of (start, end) of antecedents.
         """
         return {
             span: set(spans[:i+1])
-            for _, spans in self.coref_id_to_spans.items()
+            for _, spans in self.coref_id_to_mentions.items()
             for i, span in enumerate(spans[1:])
         }
 
@@ -396,6 +405,11 @@ class Trainer:
             loss = []
             for i, yi, pred in self.model(doc):
 
+                if i not in doc.mentions:
+                    continue
+
+                print(i)
+
                 gold_span_idxs = doc.antecedents.get(i, [])
 
                 gold_pred_idxs = [
@@ -408,12 +422,11 @@ class Trainer:
 
                 loss.append(sum(pred[i] for i in gold_pred_idxs).log())
 
-            loss = sum(loss) * -1
-            loss.backward()
-
-            self.optimizer.step()
-
-            epoch_loss += loss.item()
+            if loss:
+                loss = sum(loss) * -1
+                loss.backward()
+                self.optimizer.step()
+                epoch_loss += loss.item()
 
         print(epoch_loss)
 
