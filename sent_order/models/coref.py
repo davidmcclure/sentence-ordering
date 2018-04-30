@@ -359,6 +359,7 @@ class Coref(nn.Module):
         # Sort spans by start index.
         spans = sorted(spans, key=lambda s: s[0])
 
+        # Get pairwise `sa` scores in bulk.
         x = []
         for ix, i in enumerate(spans):
             for j in spans[:ix]:
@@ -368,6 +369,7 @@ class Coref(nn.Module):
         x = torch.stack(x)
         sa = self.pair_scorer(x).tolist()
 
+        # Get combined `sij` scores.
         c = 0
         for ix, i in enumerate(spans):
 
@@ -430,7 +432,7 @@ class Trainer:
                 if not gold_pred_idxs:
                     gold_pred_idxs = [len(pred)-1]
 
-                loss.append(sum(pred[i] for i in gold_pred_idxs).log())
+                loss.append(sum([pred[i] for i in gold_pred_idxs]).log())
 
                 for ix in gold_pred_idxs:
                     if ix != len(pred)-1 and ix == pred.argmax().item():
