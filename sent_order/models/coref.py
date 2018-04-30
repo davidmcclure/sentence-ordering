@@ -189,7 +189,7 @@ class GoldFile:
 
         # TODO: Randomly truncate up to 50 sents.
         for tokens in groups.values():
-            yield Document(tokens)
+            yield Document(tokens[:500])
 
 
 class Corpus:
@@ -417,7 +417,7 @@ class Trainer:
 
         epoch_loss = 0
         correct = 0
-        for doc in tqdm(self.train_corpus.documents):
+        for doc in tqdm(random.sample(self.train_corpus.documents, 100)):
 
             loss = []
             for i, yi, pred in self.model(doc):
@@ -438,7 +438,7 @@ class Trainer:
                     if ix != len(pred)-1 and ix == pred.argmax().item():
                         correct += 1
 
-            loss = sum(loss) * -1
+            loss = sum(loss) / len(loss) * -1
             loss.backward()
 
             self.optimizer.step()
