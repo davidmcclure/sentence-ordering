@@ -186,13 +186,18 @@ class Paragraph:
 
         return [t for sent in sents for t in sent.tokens]
 
+    def token_idx_tensor(self, shuffle_sents=False):
+        idx = [VECTORS.stoi(s) for s in self.tokens(shuffle_sents)]
+        idx = torch.LongTensor(idx).type(itype)
+        return idx
+
 
 @attr.s
 class Batch:
 
     grafs = attr.ib()
 
-    def token_idx_tensor(self, pad=50):
+    def token_idx_tensor(self):
         """Token indexes, flattened to 1d series.
         """
         return pad_and_stack([
@@ -240,9 +245,9 @@ class Corpus:
         return [Batch(grafs) for grafs in chunked_iter(self.grafs, size)]
 
 
-class SentEncoder(nn.Module):
+class Classifier(nn.Module):
 
-    def __init__(self, input_dim, lstm_dim):
+    def __init__(self, input_dim, lstm_dim, hidden_dim):
         """Initialize the LSTM.
         """
         super().__init__()
@@ -263,44 +268,6 @@ class SentEncoder(nn.Module):
             batch_first=True,
         )
 
-        self.dropout = nn.Dropout()
-
-    def forward(self, batch):
-        """Pad, pack, encode, reorder.
-
-        Args:
-            batch (Batch)
-        """
-        x, sizes = batch.token_idx_tensor()
-
-        x = self.embeddings(x)
-        x = self.dropout(x)
-
-        x, reorder = pack(x, sizes)
-
-        _, (hn, _) = self.lstm(x)
-        hn = self.dropout(hn)
-
-        # Cat forward + backward hidden layers.
-        out = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
-
-        return out[reorder]
-
-
-class Classifier(nn.Module):
-
-    def __init__(self, input_dim, lstm_dim, hidden_dim):
-        """Initialize the LSTM.
-        """
-        super().__init__()
-
-        self.lstm = nn.LSTM(
-            input_dim,
-            lstm_dim,
-            bidirectional=True,
-            batch_first=True,
-        )
-
         self.hidden = nn.Linear(lstm_dim*2, hidden_dim)
         self.out = nn.Linear(hidden_dim, 2)
 
@@ -310,9 +277,16 @@ class Classifier(nn.Module):
         """Pad, pack, encode, reorder.
 
         Args:
-            grafs (list of Variable): Encoded sentences for each graf.
+            batch (Batch)
         """
-        x, reorder = pack(*pad_and_stack(x))
+        x, sizes = pad_and_stack(x)
+        # x, reorder = pack(*pad_and_stack(x))
+        # x, sizes = batch.token_idx_tensor()
+
+        x = self.embeddings(x)
+        x = self.dropout(x)
+
+        x, reorder = pack(x, sizes)
 
         _, (hn, _) = self.lstm(x)
         hn = self.dropout(hn)
@@ -329,30 +303,22 @@ class Classifier(nn.Module):
 
 class Model(nn.Module):
 
-    def __init__(self, sent_dim=500, graf_dim=500, hidden_dim=500):
-
+    def __init__(self, lstm_dim=500, hidden_dim=500):
         super().__init__()
-
-        self.sent_encoder = SentEncoder(VECTORS.loader.dim, sent_dim)
-        self.classifier = Classifier(sent_dim*2, graf_dim, hidden_dim)
+        self.classifier = Classifier(VECTORS.loader.dim, lstm_dim, hidden_dim)
 
     def train_batch(self, batch):
         """Encode sentences, generate permutations, regress KTs.
 
         Returns: y pred, y true
         """
-        # Batch-encode sents.
-        sents = self.sent_encoder(batch)
-
         x, y = [], []
-        for graf in batch.repack_grafs(sents):
+        for graf in batch.grafs:
 
-            # Correct.
-            x.append(graf)
+            x.append(graf.token_idx_tensor())
             y.append(0)
 
-            # Shuffled.
-            x.append(graf[torch.randperm(len(graf))])
+            x.append(graf.token_idx_tensor(shuffle_sents=True))
             y.append(1)
 
         y = torch.LongTensor(y).type(itype)
@@ -363,13 +329,10 @@ class Model(nn.Module):
         """Permuate each graf, predict KT. Return tensor of consecutive
         (correct, permuted) predictions.
         """
-        # Batch-encode sents.
-        sents = self.sent_encoder(batch)
-
         x = []
-        for graf in batch.repack_grafs(sents):
-            x.append(graf)
-            x.append(graf[torch.randperm(len(graf))])
+        for graf in batch.grafs:
+            x.append(graf.token_idx_tensor())
+            x.append(graf.token_idx_tensor(shuffle_sents=True))
 
         return self.classifier(x)
 
@@ -427,7 +390,7 @@ class Trainer:
             print('Loss: %f' % np.mean(epoch_loss))
             print('Val BPC: %f' % self.val_bpc_accuracy())
 
-            self.checkpoint(epoch)
+            # self.checkpoint(epoch)
 
     def val_bpc_accuracy(self):
 
