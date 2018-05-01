@@ -250,7 +250,7 @@ class SpanScorer(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, 1),
-            # nn.ReLU(),
+            # nn.Tanh(),
         )
 
     def forward(self, g):
@@ -269,7 +269,7 @@ class PairScorer(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, 1),
-            # nn.ReLU(),
+            # nn.Tanh(),
         )
 
     def forward(self, x):
@@ -328,7 +328,7 @@ class Coref(nn.Module):
 
         # Generate and encode spans.
         spans = []
-        for n in range(1, 5):
+        for n in range(1, 11):
             for w in windowed_iter(range(len(doc)), n):
 
                 i1, i2 = w[0], w[-1]
@@ -365,6 +365,7 @@ class Coref(nn.Module):
         for ix, i in enumerate(spans):
             for j in spans[:ix]:
                 gi, gj = i[2], j[2]
+                # TODO: Speaker / genre features.
                 x.append(torch.cat([gi, gj, gi*gj]))
 
         x = torch.stack(x)
@@ -384,19 +385,16 @@ class Coref(nn.Module):
             sij = [(i[-1] + j[-1] + sa).view(1) for j, sa in j_sa]
             sij = torch.cat([*sij, torch.FloatTensor([0]).type(ftype)])
 
-            # Get distribution over possible antecedents.
-            pred = F.softmax(sij, dim=0)
-
             yield (
                 (i[0], i[1]), # i
                 [(j[0], j[1]) for j, _ in j_sa], # y(i)
-                pred, # distribution over y(i)
+                sij, # distribution over y(i)
             )
 
 
 class Trainer:
 
-    def __init__(self, train_root, lr=1e-5):
+    def __init__(self, train_root, lr=1e-3):
 
         self.train_corpus = Corpus.from_files(train_root)
 
@@ -421,8 +419,8 @@ class Trainer:
         correct = 0
         for doc in tqdm(random.sample(self.train_corpus.documents, 100)):
 
-            loss = []
-            for i, yi, pred in self.model(doc):
+            losses = []
+            for i, yi, sij in self.model(doc):
 
                 gold_span_idxs = doc.antecedents.get(i, [])
 
@@ -432,20 +430,29 @@ class Trainer:
                 ]
 
                 if not gold_pred_idxs:
-                    gold_pred_idxs = [len(pred)-1]
+                    gold_pred_idxs = [len(sij)-1]
 
-                loss.append(sum([pred[i] for i in gold_pred_idxs]).log())
+                # Get distribution over possible antecedents.
+                pred = F.softmax(sij, dim=0)
+
+                p = sum([pred[i] for i in gold_pred_idxs])
+
+                if p < 1:
+                    losses.append(p.log())
 
                 for ix in gold_pred_idxs:
                     if ix != len(pred)-1 and ix == pred.argmax().item():
                         correct += 1
 
-            loss = sum(loss) * -1
-            loss.backward()
+            # print(sij, pred, gold_pred_idxs)
 
-            self.optimizer.step()
-
-            epoch_loss += loss.item()
+            if losses:
+                loss = sum(losses) / len(losses) * -1
+                loss.backward()
+                nn.utils.clip_grad_norm(self.model.parameters(), 5)
+                self.optimizer.step()
+                epoch_loss += loss.item() / len(losses)
+                print(loss)
 
         print('Loss: %f' % epoch_loss)
         print('Correct: %d' % correct)
