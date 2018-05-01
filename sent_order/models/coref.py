@@ -312,6 +312,7 @@ class Coref(nn.Module):
         Args:
             batch (Batch)
         """
+        t1 = dt.now()
         x = doc.token_idx_tensor()
 
         # TODO: Batch?
@@ -322,6 +323,8 @@ class Coref(nn.Module):
 
         x, _ = self.lstm(embeds)
         x = self.dropout(x)
+
+        t2 = dt.now()
 
         # Generate and encode spans.
         spans = []
@@ -366,6 +369,8 @@ class Coref(nn.Module):
         # Sort spans by start index.
         spans = sorted(spans, key=lambda s: s[0])
 
+        t3 = dt.now()
+
         # Get pairwise `sa` scores in bulk.
         x = []
         for ix, i in enumerate(spans):
@@ -397,6 +402,12 @@ class Coref(nn.Module):
                 sij, # Scores for each y(i)
             )
 
+        t4 = dt.now()
+
+        print(t2-t1, 'lstm')
+        print(t3-t2, 'mention scoring')
+        print(t4-t2, 'pair scoring')
+
 
 class Trainer:
 
@@ -425,6 +436,8 @@ class Trainer:
         correct = 0
         for doc in tqdm(random.sample(self.train_corpus.documents, 100)):
 
+            t1 = dt.now()
+
             losses = []
             for i, yi, sij in self.model(doc):
 
@@ -450,6 +463,8 @@ class Trainer:
                     if ix != len(pred)-1 and ix == pred.argmax().item():
                         correct += 1
 
+            t2 = dt.now()
+
             if losses:
 
                 loss = sum(losses) / len(losses) * -1
@@ -460,6 +475,11 @@ class Trainer:
 
                 epoch_loss += loss.item() / len(losses)
                 print(correct)
+
+            t3 = dt.now()
+
+            print(t2-t1, 'forward')
+            print(t3-t2, 'back')
 
         print('Loss: %f' % epoch_loss)
         print('Correct: %d' % correct)
