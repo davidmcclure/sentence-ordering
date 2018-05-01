@@ -290,6 +290,7 @@ class Coref(nn.Module):
         )
 
         self.embeddings.weight.data.copy_(weights)
+        # self.embeddings.requires_grad = False
 
         self.lstm = nn.LSTM(
             input_dim,
@@ -395,7 +396,7 @@ class Coref(nn.Module):
 
 class Trainer:
 
-    def __init__(self, train_root, lr=1e-4):
+    def __init__(self, train_root, lr=1e-5):
 
         self.train_corpus = Corpus.from_files(train_root)
 
@@ -403,7 +404,9 @@ class Trainer:
 
         self.model = Coref(300, 200)
 
-        self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
+        params = [p for p in self.model.parameters() if p.requires_grad]
+
+        self.optimizer = optim.Adam(params, lr=lr)
 
         if torch.cuda.is_available():
             self.model.cuda()
@@ -439,6 +442,7 @@ class Trainer:
 
             loss = sum(loss) / len(loss) * -1
             loss.backward()
+            print(loss)
 
             self.optimizer.step()
 
