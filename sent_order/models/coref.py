@@ -287,7 +287,7 @@ class Coref(nn.Module):
         )
 
         self.embeddings.weight.data.copy_(weights)
-        # self.embeddings.weight.requires_grad = False
+        self.embeddings.weight.requires_grad = False
 
         self.lstm = nn.LSTM(
             input_dim,
@@ -348,11 +348,20 @@ class Coref(nn.Module):
 
         # Sort spans by unary score.
         span_sm = sorted(zip(spans, sm), key=lambda p: p[1], reverse=True)
+        spans = [(*span, sm) for span, sm in span_sm]
+
+        # Remove overlapping spans.
+        nonoverlapping = []
+        taken = set()
+        for s in spans:
+            indexes = range(s[0], s[1]+1)
+            takens = [i in taken for i in indexes]
+            if len(set(takens)) == 1:
+                nonoverlapping.append(s)
+                taken.update(indexes)
 
         # Take top lambda*T spans, keeping score.
-        # TODO: Skip overlapping spans.
-        spans = [(i1, i2, g, sm) for (i1, i2, g), sm in span_sm]
-        spans = spans[:round(len(doc)*0.4)]
+        spans = nonoverlapping[:round(len(doc)*0.4)]
 
         # Sort spans by start index.
         spans = sorted(spans, key=lambda s: s[0])
@@ -442,11 +451,15 @@ class Trainer:
                         correct += 1
 
             if losses:
+
                 loss = sum(losses) / len(losses) * -1
                 loss.backward()
+
                 nn.utils.clip_grad_norm(self.model.parameters(), 5)
                 self.optimizer.step()
+
                 epoch_loss += loss.item() / len(losses)
+                print(correct)
 
         print('Loss: %f' % epoch_loss)
         print('Correct: %d' % correct)
