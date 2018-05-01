@@ -447,7 +447,6 @@ class Trainer:
                 nn.utils.clip_grad_norm(self.model.parameters(), 5)
                 self.optimizer.step()
                 epoch_loss += loss.item() / len(losses)
-                print(loss)
 
         print('Loss: %f' % epoch_loss)
         print('Correct: %d' % correct)
