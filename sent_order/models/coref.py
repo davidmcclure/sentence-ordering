@@ -346,7 +346,7 @@ class Coref(nn.Module):
 
         # Score spans.
         g = torch.stack([s[2] for s in spans])
-        sm = self.span_scorer(g).squeeze().tolist()
+        sm = self.span_scorer(g).squeeze()
 
         # Sort spans by unary score.
         span_sm = sorted(zip(spans, sm), key=lambda p: p[1], reverse=True)
@@ -367,7 +367,7 @@ class Coref(nn.Module):
                 x.append(torch.cat([gi, gj, gi*gj]))
 
         x = torch.stack(x)
-        sa = self.pair_scorer(x).tolist()
+        sa = self.pair_scorer(x)
 
         # Get combined `sij` scores.
         c = 0
@@ -380,9 +380,8 @@ class Coref(nn.Module):
                 c += 1
 
             # Antecedents + 0 for epsilon.
-            sij = [i[-1] + j[-1] + sa for j, sa in j_sa] + [0]
-            sij = torch.FloatTensor(sij).type(ftype)
-            sij.requires_grad = True
+            sij = [(i[-1] + j[-1] + sa).view(1) for j, sa in j_sa]
+            sij = torch.cat([*sij, torch.FloatTensor([0])])
 
             # Get distribution over possible antecedents.
             pred = F.softmax(sij, dim=0)
@@ -396,7 +395,7 @@ class Coref(nn.Module):
 
 class Trainer:
 
-    def __init__(self, train_root, lr=1e-3):
+    def __init__(self, train_root, lr=1e-4):
 
         self.train_corpus = Corpus.from_files(train_root)
 
