@@ -231,7 +231,6 @@ class SpanAttention(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, 1),
-            # nn.ReLU(),
         )
 
     def forward(self, states):
@@ -250,7 +249,6 @@ class SpanScorer(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, 1),
-            # nn.Tanh(),
         )
 
     def forward(self, g):
@@ -269,7 +267,6 @@ class PairScorer(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, 1),
-            # nn.Tanh(),
         )
 
     def forward(self, x):
@@ -388,7 +385,7 @@ class Coref(nn.Module):
             yield (
                 (i[0], i[1]), # i
                 [(j[0], j[1]) for j, _ in j_sa], # y(i)
-                sij, # distribution over y(i)
+                sij, # Scores for each y(i)
             )
 
 
@@ -443,8 +440,6 @@ class Trainer:
                 for ix in gold_pred_idxs:
                     if ix != len(pred)-1 and ix == pred.argmax().item():
                         correct += 1
-
-            # print(sij, pred, gold_pred_idxs)
 
             if losses:
                 loss = sum(losses) / len(losses) * -1
