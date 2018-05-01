@@ -290,7 +290,7 @@ class Coref(nn.Module):
         )
 
         self.embeddings.weight.data.copy_(weights)
-        # self.embeddings.requires_grad = False
+        # self.embeddings.weight.requires_grad = False
 
         self.lstm = nn.LSTM(
             input_dim,
@@ -440,9 +440,8 @@ class Trainer:
                     if ix != len(pred)-1 and ix == pred.argmax().item():
                         correct += 1
 
-            loss = sum(loss) / len(loss) * -1
+            loss = sum(loss) * -1
             loss.backward()
-            print(loss)
 
             self.optimizer.step()
 
