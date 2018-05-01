@@ -406,7 +406,7 @@ class Coref(nn.Module):
 
         print(t2-t1, 'lstm')
         print(t3-t2, 'mention scoring')
-        print(t4-t2, 'pair scoring')
+        print(t4-t3, 'pair scoring')
 
 
 class Trainer:
@@ -435,6 +435,8 @@ class Trainer:
         epoch_loss = 0
         correct = 0
         for doc in tqdm(random.sample(self.train_corpus.documents, 100)):
+
+            self.optimizer.zero_grad()
 
             t1 = dt.now()
 
@@ -473,7 +475,7 @@ class Trainer:
                 nn.utils.clip_grad_norm(self.model.parameters(), 5)
                 self.optimizer.step()
 
-                epoch_loss += loss.item() / len(losses)
+                epoch_loss += loss.item()
                 print(correct)
 
             t3 = dt.now()
