@@ -187,8 +187,8 @@ class GoldFile:
         for token in self.tokens():
             groups[token.document_id].append(token)
 
-        # TODO: Randomly truncate up to 50 sents.
         for tokens in groups.values():
+            # TODO: Randomly truncate up to 50 sents.
             yield Document(tokens[:500])
 
 
@@ -313,8 +313,6 @@ class Coref(nn.Module):
             batch (Batch)
         """
         x = doc.token_idx_tensor()
-
-        # TODO: Batch?
         x = x.unsqueeze(0)
 
         embeds = self.embeddings(x)
@@ -356,7 +354,7 @@ class Coref(nn.Module):
         for s in spans:
             indexes = range(s[0], s[1]+1)
             takens = [i in taken for i in indexes]
-            if len(set(takens)) == 1:
+            if len(set(takens)) == 1 or (takens[0] == takens[-1] == False):
                 nonoverlapping.append(s)
                 taken.update(indexes)
 
