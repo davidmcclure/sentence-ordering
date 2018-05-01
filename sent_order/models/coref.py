@@ -381,7 +381,7 @@ class Coref(nn.Module):
 
             # Antecedents + 0 for epsilon.
             sij = [(i[-1] + j[-1] + sa).view(1) for j, sa in j_sa]
-            sij = torch.cat([*sij, torch.FloatTensor([0])])
+            sij = torch.cat([*sij, torch.FloatTensor([0]).type(ftype)])
 
             # Get distribution over possible antecedents.
             pred = F.softmax(sij, dim=0)
