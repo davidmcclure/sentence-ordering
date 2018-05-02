@@ -216,45 +216,9 @@ class Corpus:
         return vocab
 
 
-class SpanAttention(nn.Module):
+class FFNN(nn.Module):
 
-    def __init__(self, state_dim, hidden_dim):
-
-        super().__init__()
-
-        self.score = nn.Sequential(
-            nn.Linear(state_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 1),
-        )
-
-    def forward(self, states):
-        return F.softmax(self.score(states).squeeze(), dim=0)
-
-
-class SpanScorer(nn.Module):
-
-    def __init__(self, input_dim, hidden_dim):
-
-        super().__init__()
-
-        self.score = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 1),
-        )
-
-    def forward(self, g):
-        return self.score(g)
-
-
-class PairScorer(nn.Module):
-
-    def __init__(self, input_dim, hidden_dim):
+    def __init__(self, input_dim, hidden_dim=150):
 
         super().__init__()
 
@@ -267,7 +231,13 @@ class PairScorer(nn.Module):
         )
 
     def forward(self, x):
-        return self.score(x).view(-1)
+        return self.score(x)
+
+
+class SpanAttention(FFNN):
+
+    def forward(self, x):
+        return F.softmax(self.score(x).squeeze(), dim=0)
 
 
 class Coref(nn.Module):
@@ -299,9 +269,9 @@ class Coref(nn.Module):
         span_dim = state_dim * 2 + input_dim + 1
         pair_dim = span_dim * 3
 
-        self.span_attention = SpanAttention(state_dim, 150)
-        self.span_scorer = SpanScorer(span_dim, 150)
-        self.pair_scorer = PairScorer(pair_dim, 150)
+        self.span_attention = SpanAttention(state_dim)
+        self.span_scorer = FFNN(span_dim)
+        self.pair_scorer = FFNN(pair_dim)
 
     def forward(self, doc):
         """Pad, pack, encode, reorder.
@@ -370,7 +340,7 @@ class Coref(nn.Module):
                 x.append(torch.cat([gi, gj, gi*gj]))
 
         x = torch.stack(x)
-        sa = self.pair_scorer(x)
+        sa = self.pair_scorer(x).view(-1)
 
         # Get combined `sij` scores.
         c = 0
