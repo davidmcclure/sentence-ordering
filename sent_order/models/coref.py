@@ -449,7 +449,7 @@ class Trainer:
                 loss = sum(losses) / len(losses) * -1
                 loss.backward()
 
-                nn.utils.clip_grad_norm(self.model.parameters(), 5)
+                nn.utils.clip_grad_norm_(self.model.parameters(), 5)
                 self.optimizer.step()
 
                 epoch_loss += loss.item()
