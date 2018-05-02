@@ -417,14 +417,15 @@ class Trainer:
                 # Get distribution over possible antecedents.
                 pred = F.softmax(sij, dim=0)
 
+                # Sum mass assigned to gold antecedents.
                 p = sum([pred[i] for i in gold_pred_idxs])
-
-                if p < 1:
-                    losses.append(p.log())
+                losses.append(p.log())
 
                 for ix in gold_pred_idxs:
                     if ix != len(pred)-1 and ix == pred.argmax().item():
                         correct += 1
+
+            print(sij, pred)
 
             if losses:
 
