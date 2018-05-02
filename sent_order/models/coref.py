@@ -87,6 +87,7 @@ class Token:
 
     text = attr.ib()
     document_id = attr.ib()
+    sent_offset = attr.ib()
     coref_id = attr.ib()
 
 
@@ -171,7 +172,12 @@ class GoldFile:
             if digit is not None and line[-1].startswith('('):
                 open_tag = digit
 
-            yield Token(line[3], int(line[1]), open_tag)
+            yield Token(
+                text=line[3],
+                document_id=int(line[1]),
+                sent_offset=int(line[2]),
+                coref_id=open_tag,
+            )
 
             if line[-1].endswith(')'):
                 open_tag = None
@@ -336,7 +342,7 @@ class Coref(nn.Module):
         for ix, i in enumerate(spans):
             for j in spans[:ix]:
                 gi, gj = i[2], j[2]
-                # TODO: Speaker / genre features.
+                # TODO: Distance / peaker / genre features.
                 x.append(torch.cat([gi, gj, gi*gj]))
 
         x = torch.stack(x)
