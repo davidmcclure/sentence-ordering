@@ -131,15 +131,6 @@ class Document(UserList):
         }
 
     @cached_property
-    def mentions(self):
-        """Set of gold mention spans.
-        """
-        return set([
-            mention for cluster in self.coref_id_to_mentions.values()
-            for mention in cluster
-        ])
-
-    @cached_property
     def antecedents(self):
         """Map span (start, end) -> list of (start, end) of antecedents.
         """
