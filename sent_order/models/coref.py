@@ -101,14 +101,14 @@ class Document:
     def __len__(self):
         return len(self.tokens)
 
-    def token_idx_tensor(self):
+    def token_index_tensor(self):
         idx = [VECTORS.stoi(t.text) for t in self.tokens]
         idx = torch.LongTensor(idx).type(itype)
         return idx
 
     @cached_property
-    def coref_id_to_mentions(self):
-        """Map coref id -> list of (start, end) token indexes.
+    def coref_id_to_tokens(self):
+        """Map coref id -> token indexes, grouped by mention.
         """
         id_to_idx = defaultdict(list)
 
@@ -125,18 +125,24 @@ class Document:
             else:
                 spans.append([i])
 
+        return id_to_idx
+
+    @cached_property
+    def coref_id_to_spans(self):
+        """Map coref id -> list of (start, end) token indexes.
+        """
         return {
             cid: [(s[0], s[-1]) for s in spans]
-            for cid, spans in id_to_idx.items()
+            for cid, spans in self.coref_id_to_tokens.items()
         }
 
     @cached_property
-    def antecedents(self):
+    def span_to_antecedents(self):
         """Map span (start, end) -> list of (start, end) of antecedents.
         """
         return {
             span: set(spans[:i+1])
-            for _, spans in self.coref_id_to_mentions.items()
+            for _, spans in self.coref_id_to_spans.items()
             for i, span in enumerate(spans[1:])
         }
 
@@ -191,8 +197,8 @@ class Corpus:
         """
         docs = []
         for path in tqdm(scan_paths(root, 'gold_conll$')):
-            gf = GoldFile(path)
-            docs += list(gf.documents())
+            gold = GoldFile(path)
+            docs += list(gold.documents())
 
         return cls(docs)
 
@@ -303,7 +309,7 @@ class Coref(nn.Module):
         Args:
             batch (Batch)
         """
-        x = doc.token_idx_tensor()
+        x = doc.token_index_tensor()
         x = x.unsqueeze(0)
 
         embeds = self.embeddings(x)
@@ -417,12 +423,12 @@ class Trainer:
 
             self.optimizer.zero_grad()
 
-            total += len(doc.antecedents)
+            total += len(doc.span_to_antecedents)
 
             losses = []
             for i, yi, sij in self.model(doc):
 
-                gold_span_idxs = doc.antecedents.get(i, [])
+                gold_span_idxs = doc.span_to_antecedents.get(i, [])
 
                 gold_pred_idxs = [
                     j for j, span in enumerate(yi)
