@@ -425,17 +425,13 @@ class Trainer:
                     if ix != len(pred)-1 and ix == pred.argmax().item():
                         correct += 1
 
-            print(sij, pred)
+            loss = sum(losses) / len(losses) * -1
+            loss.backward()
 
-            if losses:
+            nn.utils.clip_grad_norm_(self.model.parameters(), 5)
+            self.optimizer.step()
 
-                loss = sum(losses) / len(losses) * -1
-                loss.backward()
-
-                nn.utils.clip_grad_norm_(self.model.parameters(), 5)
-                self.optimizer.step()
-
-                epoch_loss += loss.item()
+            epoch_loss += loss.item()
 
         print('Loss: %f' % epoch_loss)
         if total: print('Correct: %f' % (correct/total))
