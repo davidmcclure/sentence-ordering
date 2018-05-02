@@ -342,7 +342,7 @@ class Coref(nn.Module):
         for ix, i in enumerate(spans):
             for j in spans[:ix]:
                 gi, gj = i[2], j[2]
-                # TODO: Distance / peaker / genre features.
+                # TODO: Distance / speaker / genre features.
                 x.append(torch.cat([gi, gj, gi*gj]))
 
         x = torch.stack(x)
