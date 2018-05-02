@@ -90,7 +90,7 @@ class Token:
     coref_id = attr.ib()
 
 
-class Document(UserList):
+class Document:
 
     def __init__(self, tokens):
         self.tokens = tokens
