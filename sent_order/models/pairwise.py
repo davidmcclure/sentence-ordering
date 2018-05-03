@@ -3,6 +3,7 @@
 import attr
 import re
 import numpy as np
+import string
 
 from collections import defaultdict
 from cached_property import cached_property
@@ -197,7 +198,29 @@ class Corpus:
         return chunked(self.pairs(), size)
 
 
-class Embedding(nn.Embedding):
+class CharEmbedding(nn.Embedding):
+
+    def __init__(self, embed_dim=8):
+        """Set vocab, map s->i.
+        """
+        self.vocab = string.ascii_letters + string.digits + string.punctuation
+        self._stoi = {s: i for i, s in enumerate(self.vocab)}
+
+        super().__init__(len(self.vocab)+2, embed_dim)
+
+    def stoi(self, s):
+        """Map char -> embedding index.
+        """
+        idx = self._stoi.get(s)
+        return idx + 2 if idx is not None else 1
+
+    def chars_to_idx(self, chars):
+        """Given a list of tokens, map to embedding indexes.
+        """
+        return torch.LongTensor([self.stoi(t) for t in chars]).type(itype)
+
+
+class WordEmbedding(nn.Embedding):
 
     def __init__(self, vocab, path='glove.840B.300d.txt'):
         """Set vocab, map s->i.
@@ -248,7 +271,7 @@ class Classifier(nn.Module):
 
         super().__init__()
 
-        self.embeddings = Embedding(vocab)
+        self.embeddings = WordEmbedding(vocab)
 
         self.lstm = nn.LSTM(
             self.embeddings.weight.shape[1],
