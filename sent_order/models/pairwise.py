@@ -259,10 +259,16 @@ class Classifier(nn.Module):
             dropout=0.3,
         )
 
-        self.hidden = nn.Linear(lstm_dim*4, hidden_dim)
-        self.out = nn.Linear(hidden_dim, 2)
-
         self.dropout = nn.Dropout()
+
+        self.predict = nn.Sequential(
+            nn.Linear(lstm_dim*4, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 2),
+            nn.LogSoftmax(1),
+        )
 
     def forward(self, pairs):
         """Given sentence pair as a single stream of tokens, predict whether
@@ -290,11 +296,9 @@ class Classifier(nn.Module):
             torch.cat([x[i1], x[i2]])
             for i1, i2 in chunked(range(len(x)), 2)
         ])
-        
-        x = F.relu(self.hidden(x))
-        x = F.log_softmax(self.out(x), dim=1)
 
-        return x
+        return self.predict(x)
+
 
     def train_batch(self, batch):
         """Generate correct / flipped pairs, predict.
