@@ -310,11 +310,16 @@ class Classifier(nn.Module):
 
 class Trainer:
 
-    def __init__(self, train_path, train_skim=None, lr=1e-3):
+    def __init__(self, train_path, val_path,
+        train_skim=None, val_skim=None, lr=1e-3):
 
         self.train_corpus = Corpus.from_files(train_path, train_skim)
+        self.val_corpus = Corpus.from_files(val_path, val_skim)
 
-        vocab = self.train_corpus.vocab()
+        vocab = set.union(
+            self.train_corpus.vocab(),
+            self.val_corpus.vocab(),
+        )
 
         self.model = Classifier(vocab, 500, 200)
 
@@ -347,3 +352,21 @@ class Trainer:
                 epoch_loss.append(loss.item())
 
             print('Loss: %f' % np.mean(epoch_loss))
+            print('Val accuracy: %f' % self.val_accuracy())
+
+    def val_accuracy(self):
+
+        self.model.eval()
+
+        correct, total = 0, 0
+        for batch in tqdm(self.val_corpus.batches(20)):
+
+            yps, yts = self.model.train_batch(batch)
+
+            for yp, yt in zip(yps, yts):
+                if yp.argmax() == yt:
+                    correct += 1
+
+            total += len(yps)
+
+        return correct / total
