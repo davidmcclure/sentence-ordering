@@ -259,7 +259,7 @@ class Classifier(nn.Module):
             dropout=0.3,
         )
 
-        self.hidden = nn.Linear(lstm_dim*2, hidden_dim)
+        self.hidden = nn.Linear(lstm_dim*4, hidden_dim)
         self.out = nn.Linear(hidden_dim, 2)
 
         self.dropout = nn.Dropout()
@@ -270,7 +270,8 @@ class Classifier(nn.Module):
         """
         x, sizes = pad_right_and_stack([
             self.embeddings.tokens_to_idx(tokens)
-            for tokens in pairs
+            for pair in pairs
+            for tokens in pair
         ])
 
         x = self.embeddings(x)
@@ -285,6 +286,11 @@ class Classifier(nn.Module):
         x = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
         x = x[reorder]
 
+        x = torch.stack([
+            torch.cat([x[i1], x[i2]])
+            for i1, i2 in chunked(range(len(x)), 2)
+        ])
+        
         x = F.relu(self.hidden(x))
         x = F.log_softmax(self.out(x), dim=1)
 
@@ -299,11 +305,11 @@ class Classifier(nn.Module):
         for s1, s2 in batch:
 
             # Correct.
-            x.append(s1 + s2)
+            x.append((s1, s2))
             y.append(0)
 
             # Reversed.
-            x.append(s2 + s1)
+            x.append((s2, s1))
             y.append(1)
 
         y = torch.LongTensor(y).type(itype)
@@ -314,7 +320,7 @@ class Classifier(nn.Module):
 class Trainer:
 
     def __init__(self, train_path, val_path, train_skim=None, val_skim=None,
-        lstm_dim=1000, lstm_num_layers=3, hidden_dim=500, lr=1e-3):
+        lstm_dim=500, lstm_num_layers=1, hidden_dim=200, lr=1e-3):
 
         self.train_corpus = Corpus.from_files(train_path, train_skim)
         self.val_corpus = Corpus.from_files(val_path, val_skim)
