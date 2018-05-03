@@ -7,7 +7,7 @@ import numpy as np
 from collections import defaultdict
 from cached_property import cached_property
 from tqdm import tqdm
-from boltons.iterutils import pairwise
+from boltons.iterutils import pairwise, chunked
 
 import torch
 from torchtext.vocab import Vectors
@@ -182,6 +182,18 @@ class Corpus:
 
         return vocab
 
+    def pairs(self):
+        """Generate sentence pairs.
+        """
+        for doc in self.documents:
+            for s1, s2 in pairwise(doc.sents()):
+                yield [t.text for t in s1], [t.text for t in s2]
+
+    def batches(self, size):
+        """Generate batches.
+        """
+        return chunked(self.pairs(), size)
+
 
 class Embedding(nn.Embedding):
 
@@ -272,3 +284,23 @@ class Classifier(nn.Module):
         x = F.log_softmax(self.out(x), dim=1)
 
         return x
+
+    def train_batch(self, batch):
+        """Generate correct / flipped pairs, predict.
+
+        Returns: y pred, y true
+        """
+        x, y = [], []
+        for s1, s2 in batch:
+
+            # Correct.
+            x.append(s1 + s2)
+            y.append(0)
+
+            # Reversed.
+            x.append(s2 + s1)
+            y.append(1)
+
+        y = torch.LongTensor(y).type(itype)
+
+        return self(x), y
