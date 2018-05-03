@@ -7,12 +7,44 @@ from collections import defaultdict
 from cached_property import cached_property
 from boltons.iterutils import pairwise
 
+import torch
+from torchtext.vocab import Vectors
+from torch import nn, optim
+from torch.nn import functional as F
+
+from ..cuda import itype, ftype
+
 
 def parse_int(text):
     """Parse an integer out of a string.
     """
     matches = re.findall('[0-9]+', text)
     return int(matches[0]) if matches else None
+
+
+def pad_right_and_stack(xs, pad_size=None):
+    """Pad and stack a list of variable-length seqs.
+
+    Args:
+        xs (list[Tensor])
+        pad_size (int)
+
+    Returns: stacked xs, sizes
+    """
+    # Default to max seq size.
+    if not pad_size:
+        pad_size = max([len(x) for x in xs])
+
+    padded, sizes = [], []
+    for x in xs:
+
+        px = F.pad(x, (0, pad_size-len(x)))
+        padded.append(px)
+
+        size = min(pad_size, len(x))
+        sizes.append(size)
+
+    return torch.stack(padded), sizes
 
 
 @attr.s
@@ -91,3 +123,53 @@ class GoldFile:
 
         for tokens in groups.values():
             yield Document(tokens)
+
+
+class Embedding(nn.Embedding):
+
+    def __init__(self, vocab, path='glove.840B.300d.txt'):
+        """Set vocab, map s->i.
+        """
+        loader = Vectors(path)
+
+        super().__init__(len(vocab)+2, loader.dim)
+
+        self.vocab = list(vocab)
+        self._stoi = {s: i for i, s in enumerate(self.vocab)}
+
+        # Select vectors for vocab words.
+        weights = torch.stack([
+            loader.vectors[loader.stoi[s]]
+            for s in self.vocab
+        ])
+
+        # Padding + UNK zeros rows.
+        weights = torch.cat([
+            torch.zeros((2, loader.dim)),
+            weights,
+        ])
+
+        # Copy in pretrained weights.
+        self.weight.data.copy_(weights)
+
+    def __contains__(self, token):
+        """Check if word is in vocab.
+        """
+        return token in self._stoi
+
+    def stoi(self, s):
+        """Map string -> embedding index.
+        """
+        idx = self._stoi.get(s)
+        return idx + 2 if idx is not None else 1
+
+    def tokens_to_idx(self, tokens):
+        """Given a list of tokens, map to embedding indexes.
+        """
+        return torch.LongTensor([self.stoi(t) for t in tokens]).type(itype)
+
+
+class Classifier(nn.Module):
+
+    def __init__(self):
+        super().__init__()
