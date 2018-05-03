@@ -259,12 +259,7 @@ class Classifier(nn.Module):
             dropout=0.3,
         )
 
-        self.convs1 = nn.ModuleList([
-            nn.Conv2d(1, 100, (n, lstm_dim*2))
-            for n in (1, 2, 3, 4, 5)
-        ])
-
-        self.hidden = nn.Linear(500, hidden_dim)
+        self.hidden = nn.Linear(lstm_dim*4, hidden_dim)
         self.out = nn.Linear(hidden_dim, 2)
 
         self.dropout = nn.Dropout()
@@ -275,32 +270,27 @@ class Classifier(nn.Module):
         """
         x, sizes = pad_right_and_stack([
             self.embeddings.tokens_to_idx(tokens)
-            for tokens in pairs
+            for pair in pairs
+            for tokens in pair
         ])
 
         x = self.embeddings(x)
         x = self.dropout(x)
 
-        # x, reorder = pack(x, sizes)
+        x, reorder = pack(x, sizes)
 
-        x, _ = self.lstm(x)
-        # hn = self.dropout(hn)
+        _, (hn, _) = self.lstm(x)
+        hn = self.dropout(hn)
 
         # Cat forward + backward hidden layers.
-        # x = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
-        # x = x[reorder]
+        x = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
+        x = x[reorder]
 
-        x = x.unsqueeze(1)
-        # print(x.shape)
-        x = [F.relu(conv(x)).squeeze(3) for conv in self.convs1]
-        x = [F.max_pool1d(i, i.size(2)).squeeze(2) for i in x]
-        x = torch.cat(x, 1)
-
-        # x = torch.stack([
-        #     torch.cat([x[i1], x[i2]])
-        #     for i1, i2 in chunked(range(len(x)), 2)
-        # ])
-
+        x = torch.stack([
+            torch.cat([x[i1], x[i2]])
+            for i1, i2 in chunked(range(len(x)), 2)
+        ])
+        
         x = F.relu(self.hidden(x))
         x = F.log_softmax(self.out(x), dim=1)
 
@@ -315,11 +305,11 @@ class Classifier(nn.Module):
         for s1, s2 in batch:
 
             # Correct.
-            x.append(s1 + s2)
+            x.append((s1, s2))
             y.append(0)
 
             # Reversed.
-            x.append(s2 + s1)
+            x.append((s2, s1))
             y.append(1)
 
         y = torch.LongTensor(y).type(itype)
