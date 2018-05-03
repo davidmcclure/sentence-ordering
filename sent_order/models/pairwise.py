@@ -2,17 +2,21 @@
 
 import attr
 import re
+import numpy as np
 
 from collections import defaultdict
 from cached_property import cached_property
+from tqdm import tqdm
 from boltons.iterutils import pairwise
 
 import torch
 from torchtext.vocab import Vectors
 from torch import nn, optim
+from torch.nn.utils.rnn import pack_padded_sequence
 from torch.nn import functional as F
 
 from ..cuda import itype, ftype
+from ..utils import scan_paths
 
 
 def parse_int(text):
@@ -45,6 +49,33 @@ def pad_right_and_stack(xs, pad_size=None):
         sizes.append(size)
 
     return torch.stack(padded), sizes
+
+
+def pack(x, sizes, batch_first=True):
+    """Pack padded variables, provide reorder indexes.
+
+    Args:
+        batch (Variable)
+        sizes (list[int])
+
+    Returns: packed sequence, reorder indexes
+    """
+    # Get indexes for sorted sizes.
+    size_sort = np.argsort(sizes)[::-1].tolist()
+
+    # Sort tensor by size.
+    x = x[torch.LongTensor(size_sort).type(itype)]
+
+    # Sort sizes descending.
+    sizes = np.array(sizes)[size_sort].tolist()
+
+    # Pack the sequences.
+    x = pack_padded_sequence(x, sizes, batch_first)
+
+    # Indexes to restore original order.
+    reorder = torch.LongTensor(np.argsort(size_sort)).type(itype)
+
+    return x, reorder
 
 
 @attr.s
@@ -125,6 +156,33 @@ class GoldFile:
             yield Document(tokens)
 
 
+class Corpus:
+
+    @classmethod
+    def from_files(cls, root):
+        """Load from gold files.
+        """
+        docs = []
+        for path in tqdm(scan_paths(root, 'gold_conll$')):
+            gold = GoldFile(path)
+            docs += list(gold.documents())
+
+        return cls(docs)
+
+    def __init__(self, documents):
+        self.documents = documents
+
+    def vocab(self):
+        """Build vocab list.
+        """
+        vocab = set()
+
+        for doc in self.documents:
+            vocab.update([t.text for t in doc.tokens])
+
+        return vocab
+
+
 class Embedding(nn.Embedding):
 
     def __init__(self, vocab, path='glove.840B.300d.txt'):
@@ -132,10 +190,11 @@ class Embedding(nn.Embedding):
         """
         loader = Vectors(path)
 
-        super().__init__(len(vocab)+2, loader.dim)
-
-        self.vocab = list(vocab)
+        # Map string -> intersected index.
+        self.vocab = [v for v in vocab if v in loader.stoi]
         self._stoi = {s: i for i, s in enumerate(self.vocab)}
+
+        super().__init__(len(self.vocab)+2, loader.dim)
 
         # Select vectors for vocab words.
         weights = torch.stack([
@@ -171,5 +230,45 @@ class Embedding(nn.Embedding):
 
 class Classifier(nn.Module):
 
-    def __init__(self):
+    def __init__(self, vocab, lstm_dim, hidden_dim):
+
         super().__init__()
+
+        self.embeddings = Embedding(vocab)
+
+        self.lstm = nn.LSTM(
+            self.embeddings.weight.shape[1],
+            lstm_dim,
+            bidirectional=True,
+            batch_first=True,
+        )
+
+        self.hidden = nn.Linear(lstm_dim*2, hidden_dim)
+        self.out = nn.Linear(hidden_dim, 2)
+
+        self.dropout = nn.Dropout()
+
+    def forward(self, pairs):
+        """Given sentence pair as a single stream of tokens, predict whether
+        the sentences are in order.
+        """
+        x, sizes = pad_right_and_stack([
+            self.embeddings.tokens_to_idx(tokens)
+            for tokens in pairs
+        ])
+
+        x = self.embeddings(x)
+
+        x, reorder = pack(x, sizes)
+
+        _, (hn, _) = self.lstm(x)
+        hn = self.dropout(hn)
+
+        # Cat forward + backward hidden layers.
+        x = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
+        x = x[reorder]
+
+        x = F.relu(self.hidden(x))
+        x = F.log_softmax(self.out(x), dim=1)
+
+        return x
