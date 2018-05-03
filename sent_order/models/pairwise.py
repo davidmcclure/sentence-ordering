@@ -324,7 +324,7 @@ class Trainer:
             self.val_corpus.vocab(),
         )
 
-        self.model = Classifier(vocab, lstm_dim, hidden_dim)
+        self.model = Classifier(vocab, lstm_dim, lstm_num_layers, hidden_dim)
 
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
 
