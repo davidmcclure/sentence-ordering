@@ -244,7 +244,7 @@ class Embedding(nn.Embedding):
 
 class Classifier(nn.Module):
 
-    def __init__(self, vocab, lstm_dim, hidden_dim):
+    def __init__(self, vocab, lstm_dim, lstm_num_layers, hidden_dim):
 
         super().__init__()
 
@@ -255,6 +255,8 @@ class Classifier(nn.Module):
             lstm_dim,
             bidirectional=True,
             batch_first=True,
+            num_layers=lstm_num_layers,
+            dropout=0.3,
         )
 
         self.hidden = nn.Linear(lstm_dim*2, hidden_dim)
@@ -272,6 +274,7 @@ class Classifier(nn.Module):
         ])
 
         x = self.embeddings(x)
+        x = self.dropout(x)
 
         x, reorder = pack(x, sizes)
 
@@ -310,8 +313,8 @@ class Classifier(nn.Module):
 
 class Trainer:
 
-    def __init__(self, train_path, val_path,
-        train_skim=None, val_skim=None, lr=1e-3):
+    def __init__(self, train_path, val_path, train_skim=None, val_skim=None,
+        lstm_dim=1000, lstm_num_layers=3, hidden_dim=500, lr=1e-3):
 
         self.train_corpus = Corpus.from_files(train_path, train_skim)
         self.val_corpus = Corpus.from_files(val_path, val_skim)
@@ -321,7 +324,7 @@ class Trainer:
             self.val_corpus.vocab(),
         )
 
-        self.model = Classifier(vocab, 500, 200)
+        self.model = Classifier(vocab, lstm_dim, hidden_dim)
 
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
 
