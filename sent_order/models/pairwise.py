@@ -8,6 +8,7 @@ from collections import defaultdict
 from cached_property import cached_property
 from tqdm import tqdm
 from boltons.iterutils import pairwise, chunked
+from itertools import islice
 
 import torch
 from torchtext.vocab import Vectors
@@ -159,13 +160,14 @@ class GoldFile:
 class Corpus:
 
     @classmethod
-    def from_files(cls, root):
+    def from_files(cls, root, skim=None):
         """Load from gold files.
         """
+        paths = islice(scan_paths(root, 'gold_conll$'), skim)
+
         docs = []
-        for path in tqdm(scan_paths(root, 'gold_conll$')):
-            gold = GoldFile(path)
-            docs += list(gold.documents())
+        for path in tqdm(paths):
+            docs += list(GoldFile(path).documents())
 
         return cls(docs)
 
@@ -304,3 +306,44 @@ class Classifier(nn.Module):
         y = torch.LongTensor(y).type(itype)
 
         return self(x), y
+
+
+class Trainer:
+
+    def __init__(self, train_path, train_skim=None, lr=1e-3):
+
+        self.train_corpus = Corpus.from_files(train_path, train_skim)
+
+        vocab = self.train_corpus.vocab()
+
+        self.model = Classifier(vocab, 500, 200)
+
+        self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
+
+        if torch.cuda.is_available():
+            self.model.cuda()
+
+    def train(self, epochs=10, batch_size=20):
+
+        for epoch in range(epochs):
+
+            print(f'\nEpoch {epoch}')
+
+            batches = self.train_corpus.batches(batch_size)
+
+            epoch_loss = []
+            for i, batch in enumerate(tqdm(batches)):
+
+                self.optimizer.zero_grad()
+                self.model.train()
+
+                yp, yt = self.model.train_batch(batch)
+
+                loss = F.nll_loss(yp, yt)
+                loss.backward()
+
+                self.optimizer.step()
+
+                epoch_loss.append(loss.item())
+
+            print('Loss: %f' % np.mean(epoch_loss))
