@@ -28,7 +28,6 @@ def parse_int(text):
 
 @attr.s
 class Token:
-
     text = attr.ib()
     document_id = attr.ib()
     doc_index = attr.ib()
@@ -210,7 +209,7 @@ class DocEncoder(nn.Module):
         return embeds.squeeze(), states.squeeze()
 
 
-class SpanAttention(nn.Module):
+class Scorer(nn.Module):
 
     def __init__(self, input_dim, hidden_dim=150):
 
@@ -226,7 +225,10 @@ class SpanAttention(nn.Module):
 
     def forward(self, x):
         return self.score(x)
-        # return F.softmax(self.score(x).squeeze(), dim=0)
+
+
+class SpanAttention(Scorer):
+    pass
 
 
 class Span:
