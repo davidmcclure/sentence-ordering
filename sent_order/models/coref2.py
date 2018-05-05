@@ -6,7 +6,7 @@ import re
 
 from collections import defaultdict
 from itertools import islice
-from boltons.iterutils import pairwise, chunked
+from boltons.iterutils import pairwise, chunked, windowed
 from tqdm import tqdm
 from cached_property import cached_property
 from glob import glob
@@ -45,6 +45,9 @@ class Document:
 
     def __len__(self):
         return len(self.tokens)
+
+    def token_texts(self):
+        return [t.text for t in self.tokens]
 
     @cached_property
     def sent_start_indexes(self):
@@ -200,10 +203,31 @@ class DocEncoder(nn.Module):
         embeds = self.embeddings(x)
         embeds = self.dropout(embeds)
 
-        x, _ = self.lstm(embeds)
-        x = self.dropout(x)
+        states, _ = self.lstm(embeds)
+        states = self.dropout(states)
 
-        return embeds, x
+        return embeds.squeeze(), states.squeeze()
+
+
+class SpanEncoder(nn.Module):
+
+    def forward(self, doc, embeds, states):
+
+        for n in range(1, 11):
+            for tokens in windowed(doc.tokens, n):
+
+                i1 = tokens[0].doc_index
+                i2 = tokens[-1].doc_index
+
+                span_embeds = embeds[i1:i2+1]
+                span_states = states[i1:i2+1]
+
+                print(tokens)
+
+                # attn = self.attention(states).view(-1, 1)
+                # attn = sum(span_embeds * attn)
+                #
+                # g = torch.cat(span_states[0], span_states[-1], attn)
 
 
 class Coref(nn.Module):
@@ -212,12 +236,15 @@ class Coref(nn.Module):
 
         super().__init__()
 
-        self.doc_encoder(vocab)
+        self.encode_doc = DocEncoder(vocab)
+        self.encode_spans = SpanEncoder()
 
     def forward(self, doc):
 
         # LSTM over tokens.
-        embeds, lstm_states = self.doc_encoder(doc)
+        embeds, states = self.encode_doc(doc.token_texts())
 
-        spans = self.span_generator(embeds, lstm_states)
-        spans = self.span_pruner(spans)
+        spans = self.encode_spans(doc, embeds, states)
+
+        # spans = self.score_spans(spans)
+        # spans = self.prune_spans(spans)
