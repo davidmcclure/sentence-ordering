@@ -5,7 +5,7 @@ import os
 import re
 
 from collections import defaultdict
-from itertools import islice
+from itertools import islice, groupby
 from boltons.iterutils import pairwise, chunked, windowed
 from tqdm import tqdm
 from cached_property import cached_property
@@ -24,6 +24,13 @@ def parse_int(text):
     """
     matches = re.findall('[0-9]+', text)
     return int(matches[0]) if matches else None
+
+
+def remove_consec_dupes(seq):
+    """Remove consecutive duplicates in a list.
+    [1,1,2,2,3,3] -> [1,2,3]
+    """
+    return [x[0] for x in groupby(seq)]
 
 
 @attr.s
@@ -243,8 +250,21 @@ class Span:
         self.score = None
 
     def __repr__(self):
-        texts = ' '.join([t.text for t in self.tokens])
-        return f'Span<"{texts}", {self.g.shape}, {self.score}>'
+        return 'Span<%d, %d, %s, %s, %f>' % (
+            self.start_idx,
+            self.end_idx,
+            ' '.join([t.text for t in self.tokens]),
+            self.g.shape,
+            self.score,
+        )
+
+    @cached_property
+    def start_idx(self):
+        return self.tokens[0].doc_index
+
+    @cached_property
+    def end_idx(self):
+        return self.tokens[-1].doc_index
 
 
 class SpanEncoder(nn.Module):
@@ -294,6 +314,34 @@ class SpanScorer(Scorer):
         return spans
 
 
+def prune_spans(spans, T, lbda=0.4):
+    """Sort by score; remove overlaps, skim lamda*T; sort by start idx.
+    """
+    # Sory by unary score, descending.
+    spans = sorted(spans, key=lambda s: s.score, reverse=True)
+
+    # Remove spans that overlap with higher-scoring spans.
+    taken_idxs = set()
+    pruned = []
+    for span in spans:
+
+        span_idxs = [t.doc_index for t in span.tokens]
+        slots = [idx in taken_idxs for idx in span_idxs]
+        slots = remove_consec_dupes(slots)
+
+        if slots not in ([True, False], [False, True]):
+            pruned.append(span)
+            taken_idxs.update(span_idxs)
+
+    # Take top lambda*T.
+    pruned = pruned[:round(T*lbda)]
+
+    # Order by left doc index.
+    pruned = sorted(pruned, key=lambda s: s.tokens[0].doc_index)
+
+    return pruned
+
+
 class Coref(nn.Module):
 
     def __init__(self, vocab, lstm_dim=200):
@@ -318,7 +366,7 @@ class Coref(nn.Module):
 
         spans = self.encode_spans(doc, embeds, states)
         spans = self.score_spans(spans)
-        # spans = prune_spans(spans)
+        spans = prune_spans(spans, len(doc))
 
         return spans
 
