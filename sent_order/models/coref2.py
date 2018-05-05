@@ -14,6 +14,7 @@ from glob import glob
 import torch
 from torchtext.vocab import Vectors
 from torch import nn
+from torch.nn import functional as F
 
 from ..cuda import itype
 
@@ -209,10 +210,44 @@ class DocEncoder(nn.Module):
         return embeds.squeeze(), states.squeeze()
 
 
+class SpanAttention(nn.Module):
+
+    def __init__(self, input_dim, hidden_dim=150):
+
+        super().__init__()
+
+        self.score = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1),
+        )
+
+    def forward(self, x):
+        return F.softmax(self.score(x).squeeze(), dim=0)
+
+
+class Span:
+
+    def __init__(self, tokens, g):
+        self.tokens = tokens
+        self.g = g
+
+    def __repr__(self):
+        texts = ' '.join([t.text for t in self.tokens])
+        return f'Span<{texts}, {self.g.shape}>'
+
+
 class SpanEncoder(nn.Module):
+
+    def __init__(self, state_dim=400):
+        super().__init__()
+        self.attention = SpanAttention(state_dim)
 
     def forward(self, doc, embeds, states):
 
+        spans = []
         for n in range(1, 11):
             for tokens in windowed(doc.tokens, n):
 
@@ -222,12 +257,14 @@ class SpanEncoder(nn.Module):
                 span_embeds = embeds[i1:i2+1]
                 span_states = states[i1:i2+1]
 
-                print(tokens)
+                attn = self.attention(span_states)
+                attn = sum(span_embeds * attn.view(-1, 1))
 
-                # attn = self.attention(states).view(-1, 1)
-                # attn = sum(span_embeds * attn)
-                #
-                # g = torch.cat(span_states[0], span_states[-1], attn)
+                # TODO: Embedded span size phi.
+                g = torch.cat([span_states[0], span_states[-1], attn])
+                spans.append(Span(tokens, g))
+
+        return spans
 
 
 class Coref(nn.Module):
@@ -245,6 +282,8 @@ class Coref(nn.Module):
         embeds, states = self.encode_doc(doc.token_texts())
 
         spans = self.encode_spans(doc, embeds, states)
+
+        return spans
 
         # spans = self.score_spans(spans)
         # spans = self.prune_spans(spans)
