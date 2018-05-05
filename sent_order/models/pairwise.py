@@ -10,6 +10,7 @@ from cached_property import cached_property
 from tqdm import tqdm
 from boltons.iterutils import pairwise, chunked
 from itertools import islice
+from functools import reduce
 
 import torch
 from torchtext.vocab import Vectors
@@ -32,7 +33,7 @@ def pad_right_and_stack(xs, pad_size=None):
     """Pad and stack a list of variable-length seqs.
 
     Args:
-        xs (list[Tensor])
+        xs (list[Variable])
         pad_size (int)
 
     Returns: stacked xs, sizes
@@ -44,7 +45,17 @@ def pad_right_and_stack(xs, pad_size=None):
     padded, sizes = [], []
     for x in xs:
 
-        px = F.pad(x, (0, pad_size-len(x)))
+        # Ensure length > 0.
+        if len(x) == 0:
+            x = x.new(1).zero_()
+
+        if x.dim() == 1:
+            padding = (0, pad_size-len(x))
+
+        elif x.dim() == 2:
+            padding = (0, 0, 0, pad_size-len(x))
+
+        px = F.pad(x, padding)
         padded.append(px)
 
         size = min(pad_size, len(x))
@@ -276,6 +287,8 @@ class WordEmbedding(nn.Embedding):
         # Copy in pretrained weights.
         self.weight.data.copy_(weights)
 
+        self.char_cnn = CharCNN()
+
     def __contains__(self, token):
         """Check if word is in vocab.
         """
@@ -292,6 +305,28 @@ class WordEmbedding(nn.Embedding):
         """
         return torch.LongTensor([self.stoi(t) for t in tokens]).type(itype)
 
+    def char_cnn_embed(self, docs):
+        """Word + char embeddings.
+        """
+        # Flatten tokens.
+        tokens = [t for doc in docs for t in doc]
+
+        # Char CNN over words.
+        char_embeds = self.char_cnn(tokens)
+
+        # Look up word embeddings.
+        x = self.tokens_to_idx(tokens).unsqueeze(0)
+        x = self(x).squeeze()
+
+        # Cat with char embeddings.
+        x = torch.cat([x, char_embeds], dim=1)
+
+        # Repack docs.
+        idxs = reduce(lambda x, y: (*x, x[-1]+len(y)), docs, (0,))
+        x = [x[i1:i2] for i1, i2 in pairwise(idxs)]
+
+        return x
+
 
 class Classifier(nn.Module):
 
@@ -302,7 +337,8 @@ class Classifier(nn.Module):
         self.embeddings = WordEmbedding(vocab)
 
         self.lstm = nn.LSTM(
-            self.embeddings.weight.shape[1],
+            # TODO: Infer the char CNN dim?
+            self.embeddings.weight.shape[1] + 150,
             lstm_dim,
             bidirectional=True,
             batch_first=True,
@@ -325,13 +361,11 @@ class Classifier(nn.Module):
         """Given sentence pair as a single stream of tokens, predict whether
         the sentences are in order.
         """
-        x, sizes = pad_right_and_stack([
-            self.embeddings.tokens_to_idx(tokens)
-            for pair in pairs
-            for tokens in pair
-        ])
+        docs = [doc for pair in pairs for doc in pair]
 
-        x = self.embeddings(x)
+        x = self.embeddings.char_cnn_embed(docs)
+
+        x, sizes = pad_right_and_stack(x)
         x = self.dropout(x)
 
         x, reorder = pack(x, sizes)
