@@ -308,7 +308,8 @@ class SpanScorer(Scorer):
         scores = self.score(x).squeeze()
 
         # Set scores on spans.
-        for span, sm in zip(spans, scores):
+        # TODO: Can we tolist() here?
+        for span, sm in zip(spans, scores.tolist()):
             span.score = sm
 
         return spans
@@ -329,7 +330,7 @@ def prune_spans(spans, T, lbda=0.4):
         slots = [idx in taken_idxs for idx in span_idxs]
         slots = remove_consec_dupes(slots)
 
-        if slots not in ([True, False], [False, True]):
+        if len(slots) == 1 or slots == [False, True, False]:
             pruned.append(span)
             taken_idxs.update(span_idxs)
 
@@ -366,6 +367,7 @@ class Coref(nn.Module):
 
         spans = self.encode_spans(doc, embeds, states)
         spans = self.score_spans(spans)
+        return doc, spans
         spans = prune_spans(spans, len(doc))
 
         return spans
