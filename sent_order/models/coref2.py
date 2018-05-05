@@ -36,13 +36,53 @@ def remove_consec_dupes(seq):
 @attr.s
 class Token:
     text = attr.ib()
-    document_id = attr.ib()
     doc_index = attr.ib()
     sent_index = attr.ib()
     clusters = attr.ib()
 
 
 class Document:
+
+    # TODO: Test the cluster parsing.
+    # v4/data/train/data/english/annotations/bn/pri/01/pri_0103.v4_gold_conll
+    @classmethod
+    def from_lines(cls, lines):
+        """Parse tokens.
+        """
+        tokens = []
+
+        open_clusters = set()
+        for i, line in enumerate(lines):
+
+            clusters = open_clusters.copy()
+
+            parts = [p for p in line[-1].split('|') if p != '-']
+
+            for part in parts:
+
+                cid = parse_int(part)
+
+                # Open: (5
+                if re.match('^\(\d+$', part):
+                    clusters.add(cid)
+                    open_clusters.add(cid)
+
+                # Close: 5)
+                elif re.match('^\d+\)$', part):
+                    open_clusters.remove(cid)
+
+                # Solo: (5)
+                elif re.match('^\((\d+)\)$', part):
+                    clusters.add(cid)
+
+            tokens.append(Token(
+                text=line[3],
+                doc_index=i,
+                sent_index=int(line[2]),
+                clusters=clusters,
+            ))
+
+        return cls(tokens)
 
     def __init__(self, tokens):
         self.tokens = tokens
@@ -79,53 +119,16 @@ class GoldFile:
                 if line and not line.startswith('#'):
                     yield line.split()
 
-    # TODO: Test the cluster parsing.
-    # v4/data/train/data/english/annotations/bn/pri/01/pri_0103.v4_gold_conll
-    def tokens(self):
-        """Generate tokens.
+    def doc_id_lines(self):
+        """Group lines by document.
         """
-        open_clusters = set()
-        for i, line in enumerate(self.lines()):
-
-            clusters = open_clusters.copy()
-
-            parts = [p for p in line[-1].split('|') if p != '-']
-
-            for part in parts:
-
-                cid = parse_int(part)
-
-                # Open: (5
-                if re.match('^\(\d+$', part):
-                    clusters.add(cid)
-                    open_clusters.add(cid)
-
-                # Close: 5)
-                elif re.match('^\d+\)$', part):
-                    open_clusters.remove(cid)
-
-                # Solo: (5)
-                elif re.match('^\((\d+)\)$', part):
-                    clusters.add(cid)
-
-            yield Token(
-                text=line[3],
-                document_id=int(line[1]),
-                doc_index=i,
-                sent_index=int(line[2]),
-                clusters=clusters,
-            )
+        return groupby(self.lines(), lambda line: int(line[1]))
 
     def documents(self):
-        """Group tokens by document.
+        """Parse lines -> tokens, generate documents.
         """
-        groups = defaultdict(list)
-
-        for token in self.tokens():
-            groups[token.document_id].append(token)
-
-        for tokens in groups.values():
-            yield Document(tokens)
+        for _, lines in self.doc_id_lines():
+            yield Document.from_lines(lines)
 
 
 class Corpus:
