@@ -220,6 +220,34 @@ class CharEmbedding(nn.Embedding):
         return torch.LongTensor([self.stoi(t) for t in chars]).type(itype)
 
 
+class CharCNN(nn.Module):
+
+    def __init__(self):
+
+        super().__init__()
+
+        self.embeddings = CharEmbedding()
+
+        self.convs = nn.ModuleList([
+            nn.Conv2d(1, 50, (n, self.embeddings.weight.shape[1]))
+            for n in (3, 4, 5)
+        ])
+
+    def forward(self, tokens):
+
+        x = [self.embeddings.chars_to_idx(list(token)) for token in tokens]
+        x, _ = pad_right_and_stack(x, 5)
+
+        x = self.embeddings(x)
+
+        x = x.unsqueeze(1)
+        x = [F.relu(conv(x)).squeeze(3) for conv in self.convs]
+        x = [F.max_pool1d(c, c.size(2)).squeeze(2) for c in x]
+        x = torch.cat(x, 1)
+
+        return x
+
+
 class WordEmbedding(nn.Embedding):
 
     def __init__(self, vocab, path='glove.840B.300d.txt'):
