@@ -275,6 +275,14 @@ class SpanEncoder(nn.Module):
         return spans
 
 
+class SpanPruner(nn.Module):
+
+    def forward(self, spans):
+
+        x = torch.stack([s.g for s in spans])
+        sm = self.score(x)
+
+
 class Coref(nn.Module):
 
     def __init__(self, vocab, lstm_dim=200):
@@ -290,6 +298,7 @@ class Coref(nn.Module):
         embeds, states = self.encode_doc(doc.token_texts())
 
         spans = self.encode_spans(doc, embeds, states)
+        # spans = self.prune_spans(spans)
 
         return spans
 
