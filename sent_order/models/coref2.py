@@ -295,7 +295,6 @@ class SpanEncoder(nn.Module):
 
         # Get raw attention scores in bulk.
         attns = self.attention(states)
-        print(attns.shape)
 
         spans = []
         for n in range(1, 11):
@@ -303,13 +302,10 @@ class SpanEncoder(nn.Module):
 
                 i1 = tokens[0].doc_index
                 i2 = tokens[-1].doc_index
-                print(i1, i2)
 
                 span_embeds = embeds[i1:i2+1]
                 span_states = states[i1:i2+1]
                 span_attns = attns[i1:i2+1]
-
-                print(span_attns.shape)
 
                 # Softmax over attention scores for span.
                 attn = F.softmax(span_attns.squeeze(), dim=0)
