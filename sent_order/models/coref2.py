@@ -179,7 +179,7 @@ class WordEmbedding(nn.Embedding):
 
 class DocEncoder(nn.Module):
 
-    def __init__(self, vocab, lstm_dim=200, lstm_num_layers=1):
+    def __init__(self, vocab, lstm_dim, lstm_num_layers=1):
 
         super().__init__()
 
@@ -242,7 +242,7 @@ class Span:
 
 class SpanEncoder(nn.Module):
 
-    def __init__(self, state_dim=400):
+    def __init__(self, state_dim):
         super().__init__()
         self.attention = SpanAttention(state_dim)
 
@@ -275,12 +275,12 @@ class SpanEncoder(nn.Module):
 
 class Coref(nn.Module):
 
-    def __init__(self, vocab):
+    def __init__(self, vocab, lstm_dim=200):
 
         super().__init__()
 
-        self.encode_doc = DocEncoder(vocab)
-        self.encode_spans = SpanEncoder()
+        self.encode_doc = DocEncoder(vocab, lstm_dim)
+        self.encode_spans = SpanEncoder(lstm_dim*2)
 
     def forward(self, doc):
 
