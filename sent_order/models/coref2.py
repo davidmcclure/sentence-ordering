@@ -175,7 +175,7 @@ class WordEmbedding(nn.Embedding):
 
 class DocEncoder(nn.Module):
 
-    def __init__(self, vocab, lstm_dim, lstm_num_layers):
+    def __init__(self, vocab, lstm_dim=200, lstm_num_layers=1):
 
         super().__init__()
 
@@ -204,3 +204,20 @@ class DocEncoder(nn.Module):
         x = self.dropout(x)
 
         return embeds, x
+
+
+class Coref(nn.Module):
+
+    def __init__(self, vocab):
+
+        super().__init__()
+
+        self.doc_encoder(vocab)
+
+    def forward(self, doc):
+
+        # LSTM over tokens.
+        embeds, lstm_states = self.doc_encoder(doc)
+
+        spans = self.span_generator(embeds, lstm_states)
+        spans = self.span_pruner(spans)
