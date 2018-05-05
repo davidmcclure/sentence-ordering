@@ -11,6 +11,12 @@ from tqdm import tqdm
 from cached_property import cached_property
 from glob import glob
 
+import torch
+from torchtext.vocab import Vectors
+from torch import nn
+
+from ..cuda import itype
+
 
 def parse_int(text):
     """Parse an integer out of a string.
@@ -125,3 +131,76 @@ class Corpus:
             vocab.update([t.text for t in doc.tokens])
 
         return vocab
+
+
+class WordEmbedding(nn.Embedding):
+
+    def __init__(self, vocab, path='glove.840B.300d.txt'):
+        """Set vocab, map s->i.
+        """
+        loader = Vectors(path)
+
+        # Map string -> intersected index.
+        self.vocab = [v for v in vocab if v in loader.stoi]
+        self._stoi = {s: i for i, s in enumerate(self.vocab)}
+
+        super().__init__(len(self.vocab)+2, loader.dim)
+
+        # Select vectors for vocab words.
+        weights = torch.stack([
+            loader.vectors[loader.stoi[s]]
+            for s in self.vocab
+        ])
+
+        # Padding + UNK zeros rows.
+        weights = torch.cat([
+            torch.zeros((2, loader.dim)),
+            weights,
+        ])
+
+        # Copy in pretrained weights.
+        self.weight.data.copy_(weights)
+
+    def stoi(self, s):
+        """Map string -> embedding index. <UNK> --> 1.
+        """
+        idx = self._stoi.get(s)
+        return idx + 2 if idx is not None else 1
+
+    def tokens_to_idx(self, tokens):
+        """Given a list of tokens, map to embedding indexes.
+        """
+        return torch.LongTensor([self.stoi(t) for t in tokens]).type(itype)
+
+
+class DocEncoder(nn.Module):
+
+    def __init__(self, vocab, lstm_dim, lstm_num_layers):
+
+        super().__init__()
+
+        self.embeddings = WordEmbedding(vocab)
+
+        self.lstm = nn.LSTM(
+            self.embeddings.weight.shape[1],
+            lstm_dim,
+            bidirectional=True,
+            num_layers=lstm_num_layers,
+            batch_first=True,
+        )
+
+        self.dropout = nn.Dropout()
+
+    def forward(self, tokens):
+        """BiLSTM over document tokens.
+        """
+        x = self.embeddings.tokens_to_idx(tokens)
+        x = x.unsqueeze(0)
+
+        embeds = self.embeddings(x)
+        embeds = self.dropout(embeds)
+
+        x, _ = self.lstm(embeds)
+        x = self.dropout(x)
+
+        return embeds, x
