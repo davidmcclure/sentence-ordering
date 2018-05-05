@@ -65,9 +65,6 @@ class Document:
             yield self.tokens[i1:i2]
 
 
-# TODO: Nested tags? v4/data/train/data/english/annotations/bn/cnn/01/cnn_0102.v4_gold_conll
-# *** v4/data/train/data/english/annotations/bn/pri/01/pri_0103.v4_gold_conll
-
 class GoldFile:
 
     def __init__(self, path):
@@ -83,6 +80,7 @@ class GoldFile:
                     yield line.split()
 
     # TODO: Test the cluster parsing.
+    # v4/data/train/data/english/annotations/bn/pri/01/pri_0103.v4_gold_conll
     def tokens(self):
         """Generate tokens.
         """
