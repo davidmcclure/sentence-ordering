@@ -225,7 +225,8 @@ class SpanAttention(nn.Module):
         )
 
     def forward(self, x):
-        return F.softmax(self.score(x).squeeze(), dim=0)
+        return self.score(x)
+        # return F.softmax(self.score(x).squeeze(), dim=0)
 
 
 class Span:
@@ -247,6 +248,9 @@ class SpanEncoder(nn.Module):
 
     def forward(self, doc, embeds, states):
 
+        # Get raw attention scores in bulk.
+        attns = self.attention(states)
+
         spans = []
         for n in range(1, 11):
             for tokens in windowed(doc.tokens, n):
@@ -256,8 +260,10 @@ class SpanEncoder(nn.Module):
 
                 span_embeds = embeds[i1:i2+1]
                 span_states = states[i1:i2+1]
+                span_attns = attns[i1:i2+1]
 
-                attn = self.attention(span_states)
+                # Softmax over attention scores for span.
+                attn = F.softmax(span_attns.squeeze(), dim=0)
                 attn = sum(span_embeds * attn.view(-1, 1))
 
                 # TODO: Embedded span size phi.
