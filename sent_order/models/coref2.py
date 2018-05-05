@@ -1,7 +1,7 @@
 
 
-import attr
 import os
+import attr
 import re
 
 from collections import defaultdict
@@ -39,7 +39,7 @@ class Token:
     document_id = attr.ib()
     doc_index = attr.ib()
     sent_index = attr.ib()
-    coref_id = attr.ib()
+    clusters = attr.ib()
 
 
 class Document:
@@ -65,6 +65,9 @@ class Document:
             yield self.tokens[i1:i2]
 
 
+# TODO: Nested tags? v4/data/train/data/english/annotations/bn/cnn/01/cnn_0102.v4_gold_conll
+# *** v4/data/train/data/english/annotations/bn/pri/01/pri_0103.v4_gold_conll
+
 class GoldFile:
 
     def __init__(self, path):
@@ -82,24 +85,36 @@ class GoldFile:
     def tokens(self):
         """Generate tokens.
         """
-        open_tag = None
+        open_clusters = set()
         for i, line in enumerate(self.lines()):
 
-            digit = parse_int(line[-1])
+            clusters = open_clusters.copy()
 
-            if digit is not None and line[-1].startswith('('):
-                open_tag = digit
+            for part in line[-1].split('|'):
+
+                open_tag = re.match('^\((\d+)$', part)
+                if open_tag:
+                    cid = int(open_tag.group(1))
+                    clusters.add(cid)
+                    open_clusters.add(cid)
+
+                close_tag = re.match('^(\d+)\)$', part)
+                if close_tag:
+                    cid = int(close_tag.group(1))
+                    open_clusters.remove(cid)
+
+                solo_tag = re.match('^\((\d+)\)$', part)
+                if solo_tag:
+                    cid = int(solo_tag.group(1))
+                    clusters.add(cid)
 
             yield Token(
                 text=line[3],
                 document_id=int(line[1]),
                 doc_index=i,
                 sent_index=int(line[2]),
-                coref_id=open_tag,
+                clusters=clusters,
             )
-
-            if line[-1].endswith(')'):
-                open_tag = None
 
     def documents(self):
         """Group tokens by document.
@@ -277,6 +292,7 @@ class SpanEncoder(nn.Module):
 
         # Get raw attention scores in bulk.
         attns = self.attention(states)
+        print(attns.shape)
 
         spans = []
         for n in range(1, 11):
@@ -284,10 +300,13 @@ class SpanEncoder(nn.Module):
 
                 i1 = tokens[0].doc_index
                 i2 = tokens[-1].doc_index
+                print(i1, i2)
 
                 span_embeds = embeds[i1:i2+1]
                 span_states = states[i1:i2+1]
                 span_attns = attns[i1:i2+1]
+
+                print(span_attns.shape)
 
                 # Softmax over attention scores for span.
                 attn = F.softmax(span_attns.squeeze(), dim=0)
@@ -367,10 +386,9 @@ class Coref(nn.Module):
 
         spans = self.encode_spans(doc, embeds, states)
         spans = self.score_spans(spans)
-        return doc, spans
         spans = prune_spans(spans, len(doc))
 
-        return spans
+        # score pairs
+        # yield distributions over antecedents
 
-        # spans = self.score_spans(spans)
-        # spans = self.prune_spans(spans)
+        return spans
