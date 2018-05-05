@@ -82,6 +82,7 @@ class GoldFile:
                 if line and not line.startswith('#'):
                     yield line.split()
 
+    # TODO: Test the cluster parsing.
     def tokens(self):
         """Generate tokens.
         """
@@ -90,22 +91,23 @@ class GoldFile:
 
             clusters = open_clusters.copy()
 
-            for part in line[-1].split('|'):
+            parts = [p for p in line[-1].split('|') if p != '-']
 
-                open_tag = re.match('^\((\d+)$', part)
-                if open_tag:
-                    cid = int(open_tag.group(1))
+            for part in parts:
+
+                cid = parse_int(part)
+
+                # Open: (5
+                if re.match('^\(\d+$', part):
                     clusters.add(cid)
                     open_clusters.add(cid)
 
-                close_tag = re.match('^(\d+)\)$', part)
-                if close_tag:
-                    cid = int(close_tag.group(1))
+                # Close: 5)
+                elif re.match('^\d+\)$', part):
                     open_clusters.remove(cid)
 
-                solo_tag = re.match('^\((\d+)\)$', part)
-                if solo_tag:
-                    cid = int(solo_tag.group(1))
+                # Solo: (5)
+                elif re.match('^\((\d+)\)$', part):
                     clusters.add(cid)
 
             yield Token(
