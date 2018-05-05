@@ -289,6 +289,7 @@ class Coref(nn.Module):
         x = x.unsqueeze(0)
 
         embeds = self.embeddings(x)
+        # TODO: Turian embeds.
         # TODO: Char CNN.
 
         x, _ = self.lstm(embeds)
