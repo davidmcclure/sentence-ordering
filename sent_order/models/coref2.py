@@ -194,6 +194,10 @@ class DocEncoder(nn.Module):
 
         self.dropout = nn.Dropout()
 
+    @property
+    def embed_dim(self):
+        return self.embeddings.weight.shape[1]
+
     def forward(self, tokens):
         """BiLSTM over document tokens.
         """
@@ -236,10 +240,11 @@ class Span:
     def __init__(self, tokens, g):
         self.tokens = tokens
         self.g = g
+        self.score = None
 
     def __repr__(self):
         texts = ' '.join([t.text for t in self.tokens])
-        return f'Span<{texts}, {self.g.shape}>'
+        return f'Span<"{texts}", {self.g.shape}, {self.score}>'
 
 
 class SpanEncoder(nn.Module):
@@ -275,12 +280,18 @@ class SpanEncoder(nn.Module):
         return spans
 
 
-class SpanPruner(nn.Module):
+class SpanScorer(Scorer):
 
     def forward(self, spans):
 
         x = torch.stack([s.g for s in spans])
-        sm = self.score(x)
+        scores = self.score(x).squeeze()
+
+        # Set scores on spans.
+        for span, sm in zip(spans, scores):
+            span.score = sm
+
+        return spans
 
 
 class Coref(nn.Module):
@@ -290,7 +301,15 @@ class Coref(nn.Module):
         super().__init__()
 
         self.encode_doc = DocEncoder(vocab, lstm_dim)
-        self.encode_spans = SpanEncoder(lstm_dim*2)
+
+        # LSTM forward + back.
+        state_dim = lstm_dim * 2
+
+        # Left + right LSTM states, head attention.
+        g_dim = state_dim * 2 + self.encode_doc.embed_dim
+
+        self.encode_spans = SpanEncoder(state_dim)
+        self.score_spans = SpanScorer(g_dim)
 
     def forward(self, doc):
 
@@ -298,7 +317,8 @@ class Coref(nn.Module):
         embeds, states = self.encode_doc(doc.token_texts())
 
         spans = self.encode_spans(doc, embeds, states)
-        # spans = self.prune_spans(spans)
+        spans = self.score_spans(spans)
+        # spans = prune_spans(spans)
 
         return spans
 
