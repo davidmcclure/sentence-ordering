@@ -346,7 +346,6 @@ class Span:
     def i1i2(self):
         return (self.i1, self.i2)
 
-    @cached_property
     def sij_gold_indexes(self):
         """Get indexes of gold antecedents in the sij score tensor.
         """
@@ -508,7 +507,6 @@ class Coref(nn.Module):
 
         # LSTM over tokens.
         embeds, states = self.encode_doc(doc.token_texts())
-        print('test')
 
         spans = self.score_spans(doc, embeds, states)
         spans = prune_spans(spans, len(doc))
