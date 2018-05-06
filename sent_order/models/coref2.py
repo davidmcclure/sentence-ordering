@@ -53,7 +53,6 @@ def regroup_indexes(seq, size_fn):
 @attr.s
 class Token:
     text = attr.ib()
-    doc_index = attr.ib()
     sent_index = attr.ib()
     clusters = attr.ib()
 
@@ -94,7 +93,6 @@ class Document:
 
             tokens.append(Token(
                 text=line[3],
-                doc_index=i,
                 sent_index=int(line[2]),
                 clusters=clusters,
             ))
@@ -378,10 +376,9 @@ class SpanScorer(nn.Module):
         # Slice out spans, build encodings.
         spans = []
         for n in range(1, 11):
-            for tokens in windowed(doc.tokens, n):
+            for w in windowed(range(len(doc.tokens)), n):
 
-                i1 = tokens[0].doc_index
-                i2 = tokens[-1].doc_index
+                i1, i2 = w[0], w[-1]
 
                 span_embeds = embeds[i1:i2+1]
                 span_states = states[i1:i2+1]
@@ -423,7 +420,7 @@ def prune_spans(spans, T, lbda=0.4):
     pruned = []
     for span in spans:
 
-        span_idxs = [t.doc_index for t in span.tokens]
+        span_idxs = range(span.i1, span.i2+1)
         slots = [idx in taken_idxs for idx in span_idxs]
         slots = remove_consec_dupes(slots)
 
@@ -529,6 +526,10 @@ class Trainer:
         if torch.cuda.is_available():
             self.model.cuda()
 
+    def train(self, epochs=10, *args, **kwargs):
+        for epoch in range(epochs):
+            self.train_epoch(epoch, *args, **kwargs)
+
     def train_epoch(self, epoch, batch_size=100):
 
         print(f'\nEpoch {epoch}')
@@ -537,41 +538,33 @@ class Trainer:
 
         docs = random.sample(self.train_corpus.documents, batch_size)
 
-        epoch_loss, correct, total = 0, 0, 0
+        epoch_loss = 0
         for doc in tqdm(docs):
-
-            self.optimizer.zero_grad()
-
-            total += len(doc.i1i2_to_ant_i1i2)
-
-            losses = []
-            for span in self.model(doc):
-
-                # Softmax over possible antecedents.
-                pred = F.softmax(span.sij, dim=0)
-
-                # Get indexes of correct antecedents.
-                yt = span.sij_gold_indexes()
-
-                # Sum mass assigned to correct antecedents.
-                p = sum([pred[i] for i in yt])
-                losses.append(p.log())
-
-                for ix in yt:
-                    if ix != len(pred)-1 and ix == pred.argmax().item():
-                        correct += 1
-
-            loss = sum(losses) / len(losses) * -1
-            loss.backward()
-
-            nn.utils.clip_grad_norm_(self.model.parameters(), 5)
-            self.optimizer.step()
-
-            epoch_loss += loss.item()
+            epoch_loss += self.train_doc(doc)
 
         print('Loss: %f' % epoch_loss)
-        if total: print('Correct: %f' % (correct/total))
 
-    def train(self, epochs=10, *args, **kwargs):
-        for epoch in range(epochs):
-            self.train_epoch(epoch, *args, **kwargs)
+    def train_doc(self, doc):
+
+        self.optimizer.zero_grad()
+
+        losses = []
+        for span in self.model(doc):
+
+            # Softmax over possible antecedents.
+            pred = F.softmax(span.sij, dim=0)
+
+            # Get indexes of correct antecedents.
+            yt = span.sij_gold_indexes()
+
+            # Sum mass assigned to correct antecedents.
+            p = sum([pred[i] for i in yt])
+            losses.append(p.log())
+
+        loss = sum(losses) / len(losses) * -1
+        loss.backward()
+
+        nn.utils.clip_grad_norm_(self.model.parameters(), 5)
+        self.optimizer.step()
+
+        return loss
