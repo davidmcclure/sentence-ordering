@@ -262,6 +262,8 @@ class SpanAttention(Scorer):
 
 class Span:
 
+    __slots__ = ('tokens', 'g', 'score')
+
     def __init__(self, tokens, g):
         self.tokens = tokens
         self.g = g
@@ -292,7 +294,8 @@ class SpanEncoder(nn.Module):
         self.attention = SpanAttention(state_dim)
 
     def forward(self, doc, embeds, states):
-
+        """Generate spans, attend over LSTM states, form encodings.
+        """
         # Get raw attention scores in bulk.
         attns = self.attention(states)
 
@@ -321,7 +324,8 @@ class SpanEncoder(nn.Module):
 class SpanScorer(Scorer):
 
     def forward(self, spans):
-
+        """Score spans, set scores on instances.
+        """
         x = torch.stack([s.g for s in spans])
         scores = self.score(x).squeeze()
 
@@ -361,6 +365,29 @@ def prune_spans(spans, T, lbda=0.4):
     return pruned
 
 
+class PairScorer(Scorer):
+
+    def forward(self, spans):
+        """Map span -> candidate antecedents, score pairs.
+        """
+        # Take up to K antecedents.
+        i_yi = [
+            (i, spans[ix-250:ix])
+            for ix, i in enumerate(spans)
+        ]
+
+        # TODO: Distance / speaker / genre embeddings.
+        x = torch.stack([
+            torch.cat([i.g, j.g, i.g*j.g])
+            for i, yi in i_yi for j in yi
+        ])
+
+        scores = self.score(x).view(-1)
+
+        # yis = [yi for _, yi in i_yi]
+        # idxs = reduce(lambda x, y: (*x, x[-1]+len(y)), yis], (0,))
+
+
 class Coref(nn.Module):
 
     def __init__(self, vocab, lstm_dim=200):
@@ -386,8 +413,4 @@ class Coref(nn.Module):
         spans = self.encode_spans(doc, embeds, states)
         spans = self.score_spans(spans)
         spans = prune_spans(spans, len(doc))
-
-        # score pairs
-        # yield distributions over antecedents
-
         return spans
