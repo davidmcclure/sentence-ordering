@@ -262,28 +262,28 @@ class SpanAttention(Scorer):
 
 class Span:
 
-    __slots__ = ('tokens', 'g', 'score')
-
     def __init__(self, tokens, g):
         self.tokens = tokens
         self.g = g
         self.score = None
+        self.yi = None
+        self.sij = None
 
     def __repr__(self):
-        return 'Span<%d, %d, %s, %s, %f>' % (
-            self.start_idx,
-            self.end_idx,
+        return 'Span<i1=%d, i2=%d, tokens=%s, g~%s, sm=%f>' % (
+            self.i1,
+            self.i2,
             ' '.join([t.text for t in self.tokens]),
             self.g.shape,
             self.score,
         )
 
     @cached_property
-    def start_idx(self):
+    def i1(self):
         return self.tokens[0].doc_index
 
     @cached_property
-    def end_idx(self):
+    def i2(self):
         return self.tokens[-1].doc_index
 
 
@@ -371,21 +371,19 @@ class PairScorer(Scorer):
         """Map span -> candidate antecedents, score pairs.
         """
         # Take up to K antecedents.
-        i_yi = [
-            (i, spans[ix-250:ix])
-            for ix, i in enumerate(spans)
-        ]
+        for ix, i in enumerate(spans):
+            i.yi = spans[ix-250:ix]
 
         # TODO: Distance / speaker / genre embeddings.
         x = torch.stack([
             torch.cat([i.g, j.g, i.g*j.g])
-            for i, yi in i_yi for j in yi
+            for i in spans for j in i.yi
         ])
 
         scores = self.score(x).view(-1)
 
         # yis = [yi for _, yi in i_yi]
-        # idxs = reduce(lambda x, y: (*x, x[-1]+len(y)), yis], (0,))
+        # idxs = reduce(lambda ends, s: (*ends, ends[-1]+len(s.yi)), spans], (0,))
 
 
 class Coref(nn.Module):
