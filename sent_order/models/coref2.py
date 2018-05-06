@@ -260,23 +260,16 @@ class SpanAttention(Scorer):
     pass
 
 
+@attr.s(frozen=True, repr=False)
 class Span:
 
-    def __init__(self, tokens, g):
-        self.tokens = tokens
-        self.g = g
-        self.score = None
-        self.yi = None
-        self.sij = None
+    tokens = attr.ib()
+    g = attr.ib()
+    score = attr.ib(default=None)
 
     def __repr__(self):
-        return 'Span<i1=%d, i2=%d, tokens=%s, g~%s, sm=%f>' % (
-            self.i1,
-            self.i2,
-            ' '.join([t.text for t in self.tokens]),
-            self.g.shape,
-            self.score,
-        )
+        text = ' '.join([t.text for t in self.tokens])
+        return 'Span<%d, %d, "%s">' % (self.i1, self.i2, text)
 
     @cached_property
     def i1(self):
@@ -331,8 +324,10 @@ class SpanScorer(Scorer):
 
         # Set scores on spans.
         # TODO: Can we tolist() here?
-        for span, sm in zip(spans, scores.tolist()):
-            span.score = sm
+        spans = [
+            attr.evolve(span, score=sm)
+            for span, sm in zip(spans, scores.tolist())
+        ]
 
         return spans
 
@@ -365,22 +360,22 @@ def prune_spans(spans, T, lbda=0.4):
     return pruned
 
 
-class PairScorer(Scorer):
-
-    def forward(self, spans):
-        """Map span -> candidate antecedents, score pairs.
-        """
-        # Take up to K antecedents.
-        for ix, i in enumerate(spans):
-            i.yi = spans[ix-250:ix]
-
-        # TODO: Distance / speaker / genre embeddings.
-        x = torch.stack([
-            torch.cat([i.g, j.g, i.g*j.g])
-            for i in spans for j in i.yi
-        ])
-
-        scores = self.score(x).view(-1)
+# class PairScorer(Scorer):
+#
+#     def forward(self, spans):
+#         """Map span -> candidate antecedents, score pairs.
+#         """
+#         # Take up to K antecedents.
+#         for ix, i in enumerate(spans):
+#             i.yi = spans[ix-250:ix]
+#
+#         # TODO: Distance / speaker / genre embeddings.
+#         x = torch.stack([
+#             torch.cat([i.g, j.g, i.g*j.g])
+#             for i in spans for j in i.yi
+#         ])
+#
+#         scores = self.score(x).view(-1)
 
         # yis = [yi for _, yi in i_yi]
         # idxs = reduce(lambda ends, s: (*ends, ends[-1]+len(s.yi)), spans], (0,))
@@ -411,4 +406,5 @@ class Coref(nn.Module):
         spans = self.encode_spans(doc, embeds, states)
         spans = self.score_spans(spans)
         spans = prune_spans(spans, len(doc))
+
         return spans
