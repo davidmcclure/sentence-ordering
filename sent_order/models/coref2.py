@@ -119,6 +119,22 @@ class Document:
         for i1, i2 in pairwise(self.sent_start_indexes + [len(self)]):
             yield self.tokens[i1:i2]
 
+    def truncate_sents_random(self, max_sents=50):
+        """Randomly truncate sents up to N, return new instance.
+        """
+        sents = list(self.sents())
+
+        count = random.randint(1, min(len(sents), max_sents))
+        start = random.randint(0, len(sents)-count)
+
+        # Slice out random sentence window.
+        new_sents = sents[start:start+count]
+
+        # Flatten out tokens.
+        tokens = [t for sent in new_sents for t in sent]
+
+        return self.__class__(tokens)
+
     @cached_property
     def coref_id_to_index_range(self):
         """Map coref id -> token indexes, grouped by mention.
@@ -546,6 +562,8 @@ class Trainer:
 
     def train_doc(self, doc):
 
+        doc = doc.truncate_sents_random()
+
         self.optimizer.zero_grad()
 
         losses = []
@@ -560,6 +578,8 @@ class Trainer:
             # Sum mass assigned to correct antecedents.
             p = sum([pred[i] for i in yt])
             losses.append(p.log())
+
+        print(pred)
 
         loss = sum(losses) / len(losses) * -1
         loss.backward()
