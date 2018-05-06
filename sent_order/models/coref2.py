@@ -6,6 +6,7 @@ import re
 
 from collections import defaultdict
 from itertools import islice, groupby
+from functools import reduce
 from boltons.iterutils import pairwise, chunked, windowed
 from tqdm import tqdm
 from cached_property import cached_property
@@ -16,7 +17,7 @@ from torchtext.vocab import Vectors
 from torch import nn
 from torch.nn import functional as F
 
-from ..cuda import itype
+from ..cuda import itype, ftype
 
 
 def parse_int(text):
@@ -259,11 +260,24 @@ class Scorer(nn.Module):
 @attr.s(frozen=True, repr=False)
 class Span:
 
+    # Parent document reference.
     doc = attr.ib()
+
+    # Left / right token indexes.
     i1 = attr.ib()
     i2 = attr.ib()
 
+    # Span embedding tensor.
+    g = attr.ib()
+
+    # Unary mention score.
     sm = attr.ib(default=None)
+
+    # List of candidate antecedent spans.
+    yi = attr.ib(default=None)
+
+    # Pairwise scores for each yi.
+    sij = attr.ib(default=None)
 
     def __repr__(self):
         text = ' '.join([t.text for t in self.tokens])
@@ -276,10 +290,10 @@ class Span:
 
 class SpanScorer(nn.Module):
 
-    def __init__(self, state_dim, g_dim):
+    def __init__(self, state_dim, gi_dim):
         super().__init__()
         self.attention = Scorer(state_dim)
-        self.sm = Scorer(g_dim)
+        self.sm = Scorer(gi_dim)
 
     def forward(self, doc, embeds, states):
         """Generate spans, attend over LSTM states, form encodings.
@@ -288,7 +302,7 @@ class SpanScorer(nn.Module):
         attns = self.attention(states)
 
         # Slice out spans, build encodings.
-        spans, gs = [], []
+        spans = []
         for n in range(1, 11):
             for tokens in windowed(doc.tokens, n):
 
@@ -307,11 +321,12 @@ class SpanScorer(nn.Module):
                 # TODO: Embedded span size phi.
                 g = torch.cat([span_states[0], span_states[-1], attn])
 
-                spans.append(Span(doc, i1, i2))
-                gs.append(g)
+                spans.append(Span(doc, i1, i2, g))
+
+        x = torch.stack([s.g for s in spans])
 
         # Unary scores for spans.
-        scores = self.sm(torch.stack(gs)).squeeze()
+        scores = self.sm(x).squeeze()
 
         # Set scores on spans.
         # TODO: Can we tolist() here?
@@ -351,25 +366,49 @@ def prune_spans(spans, T, lbda=0.4):
     return pruned
 
 
-# class PairScorer(Scorer):
-#
-#     def forward(self, spans):
-#         """Map span -> candidate antecedents, score pairs.
-#         """
-#         # Take up to K antecedents.
-#         for ix, i in enumerate(spans):
-#             i.yi = spans[ix-250:ix]
-#
-#         # TODO: Distance / speaker / genre embeddings.
-#         x = torch.stack([
-#             torch.cat([i.g, j.g, i.g*j.g])
-#             for i in spans for j in i.yi
-#         ])
-#
-#         scores = self.score(x).view(-1)
+def regroup_indexes(seq, size_fn):
+    return reduce(lambda ix, i: (*ix, ix[-1] + size_fn(i)), seq, (0,))
 
-        # yis = [yi for _, yi in i_yi]
-        # idxs = reduce(lambda ends, s: (*ends, ends[-1]+len(s.yi)), spans], (0,))
+
+class PairScorer(Scorer):
+
+    def forward(self, spans):
+        """Map span -> candidate antecedents, score pairs.
+        """
+        # Take up to K antecedents.
+        spans = [
+            attr.evolve(span, yi=spans[ix-250:ix])
+            for ix, span in enumerate(spans)
+        ]
+
+        # Build pair embeddings.
+        # TODO: Distance / speaker embeds.
+        x = torch.stack([
+            torch.cat([i.g, j.g, i.g*j.g])
+            for i in spans for j in i.yi
+        ])
+
+        # Get pairwise `sa` scores.
+        scores = self.score(x).view(-1)
+
+        sa_idx = regroup_indexes(spans, lambda s: len(s.yi))
+
+        spans_sij = []
+        for span, (i1, i2) in zip(spans, pairwise(sa_idx)):
+
+            # Build composite `sij` scores.
+            sij = [
+                (span.sm + yi.sm + sa).view(1)
+                for yi, sa in zip(span.yi, scores[i1:i2])
+            ]
+
+            # Add epsilon score 0 as last element.
+            epsilon = torch.FloatTensor([0]).type(ftype)
+            sij = torch.cat([*sij, epsilon])
+
+            spans_sij.append(attr.evolve(span, sij=sij))
+
+        return spans_sij
 
 
 class Coref(nn.Module):
@@ -384,9 +423,13 @@ class Coref(nn.Module):
         state_dim = lstm_dim * 2
 
         # Left + right LSTM states, head attention.
-        g_dim = state_dim * 2 + self.encode_doc.embed_dim
+        gi_dim = state_dim * 2 + self.encode_doc.embed_dim
 
-        self.score_spans = SpanScorer(state_dim, g_dim)
+        # i, j, i*j
+        gij_dim = gi_dim * 3
+
+        self.score_spans = SpanScorer(state_dim, gi_dim)
+        self.score_pairs = PairScorer(gij_dim)
 
     def forward(self, doc):
 
@@ -396,4 +439,4 @@ class Coref(nn.Module):
         spans = self.score_spans(doc, embeds, states)
         spans = prune_spans(spans, len(doc))
 
-        return spans
+        return self.score_pairs(spans)
