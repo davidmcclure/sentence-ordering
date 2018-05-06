@@ -256,10 +256,6 @@ class Scorer(nn.Module):
         return self.score(x)
 
 
-class SpanAttention(Scorer):
-    pass
-
-
 @attr.s(frozen=True, repr=False)
 class Span:
 
@@ -280,18 +276,20 @@ class Span:
         return self.tokens[-1].doc_index
 
 
-class SpanEncoder(nn.Module):
+class SpanScorer(nn.Module):
 
-    def __init__(self, state_dim):
+    def __init__(self, state_dim, g_dim):
         super().__init__()
-        self.attention = SpanAttention(state_dim)
+        self.attention = Scorer(state_dim)
+        self.sm = Scorer(g_dim)
 
     def forward(self, doc, embeds, states):
         """Generate spans, attend over LSTM states, form encodings.
         """
-        # Get raw attention scores in bulk.
+        # Get raw attention scores over LSTM states.
         attns = self.attention(states)
 
+        # Slice out spans, build encodings.
         spans = []
         for n in range(1, 11):
             for tokens in windowed(doc.tokens, n):
@@ -307,20 +305,15 @@ class SpanEncoder(nn.Module):
                 attn = F.softmax(span_attns.squeeze(), dim=0)
                 attn = sum(span_embeds * attn.view(-1, 1))
 
+                # Left LSTM + right LSTM + attention.
                 # TODO: Embedded span size phi.
                 g = torch.cat([span_states[0], span_states[-1], attn])
                 spans.append(Span(tokens, g))
 
-        return spans
-
-
-class SpanScorer(Scorer):
-
-    def forward(self, spans):
-        """Score spans, set scores on instances.
-        """
         x = torch.stack([s.g for s in spans])
-        scores = self.score(x).squeeze()
+
+        # Unary scores for spans.
+        scores = self.sm(x).squeeze()
 
         # Set scores on spans.
         # TODO: Can we tolist() here?
@@ -395,16 +388,14 @@ class Coref(nn.Module):
         # Left + right LSTM states, head attention.
         g_dim = state_dim * 2 + self.encode_doc.embed_dim
 
-        self.encode_spans = SpanEncoder(state_dim)
-        self.score_spans = SpanScorer(g_dim)
+        self.score_spans = SpanScorer(state_dim, g_dim)
 
     def forward(self, doc):
 
         # LSTM over tokens.
         embeds, states = self.encode_doc(doc.token_texts())
 
-        spans = self.encode_spans(doc, embeds, states)
-        spans = self.score_spans(spans)
+        spans = self.score_spans(doc, embeds, states)
         spans = prune_spans(spans, len(doc))
 
         return spans
