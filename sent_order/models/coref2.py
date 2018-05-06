@@ -259,21 +259,19 @@ class Scorer(nn.Module):
 @attr.s(frozen=True, repr=False)
 class Span:
 
-    tokens = attr.ib()
-    g = attr.ib()
-    score = attr.ib(default=None)
+    doc = attr.ib()
+    i1 = attr.ib()
+    i2 = attr.ib()
+
+    sm = attr.ib(default=None)
 
     def __repr__(self):
         text = ' '.join([t.text for t in self.tokens])
         return 'Span<%d, %d, "%s">' % (self.i1, self.i2, text)
 
     @cached_property
-    def i1(self):
-        return self.tokens[0].doc_index
-
-    @cached_property
-    def i2(self):
-        return self.tokens[-1].doc_index
+    def tokens(self):
+        return self.doc.tokens[self.i1:self.i2+1]
 
 
 class SpanScorer(nn.Module):
@@ -290,7 +288,7 @@ class SpanScorer(nn.Module):
         attns = self.attention(states)
 
         # Slice out spans, build encodings.
-        spans = []
+        spans, gs = [], []
         for n in range(1, 11):
             for tokens in windowed(doc.tokens, n):
 
@@ -308,17 +306,17 @@ class SpanScorer(nn.Module):
                 # Left LSTM + right LSTM + attention.
                 # TODO: Embedded span size phi.
                 g = torch.cat([span_states[0], span_states[-1], attn])
-                spans.append(Span(tokens, g))
 
-        x = torch.stack([s.g for s in spans])
+                spans.append(Span(doc, i1, i2))
+                gs.append(g)
 
         # Unary scores for spans.
-        scores = self.sm(x).squeeze()
+        scores = self.sm(torch.stack(gs)).squeeze()
 
         # Set scores on spans.
         # TODO: Can we tolist() here?
         spans = [
-            attr.evolve(span, score=sm)
+            attr.evolve(span, sm=sm)
             for span, sm in zip(spans, scores.tolist())
         ]
 
@@ -329,7 +327,7 @@ def prune_spans(spans, T, lbda=0.4):
     """Sort by score; remove overlaps, skim lamda*T; sort by start idx.
     """
     # Sory by unary score, descending.
-    spans = sorted(spans, key=lambda s: s.score, reverse=True)
+    spans = sorted(spans, key=lambda s: s.sm, reverse=True)
 
     # Remove spans that overlap with higher-scoring spans.
     taken_idxs = set()
@@ -348,7 +346,7 @@ def prune_spans(spans, T, lbda=0.4):
     pruned = pruned[:round(T*lbda)]
 
     # Order by left doc index.
-    pruned = sorted(pruned, key=lambda s: s.tokens[0].doc_index)
+    pruned = sorted(pruned, key=lambda s: s.i1)
 
     return pruned
 
