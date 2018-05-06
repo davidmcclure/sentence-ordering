@@ -34,6 +34,20 @@ def remove_consec_dupes(seq):
     return [x[0] for x in groupby(seq)]
 
 
+def regroup_indexes(seq, size_fn):
+    """Given a sequence A that contains items of variable size, provide a list
+    of indexes that, when iterated as pairs, will slice a flat sequence B into
+    groups with sizes that correspond to the items in A.
+
+    Args:
+        seq (iterable)
+        size_fn (func): Provides size of an individual item in `seq`.
+
+    Returns: list<int>
+    """
+    return reduce(lambda ix, i: (*ix, ix[-1] + size_fn(i)), seq, (0,))
+
+
 @attr.s
 class Token:
     text = attr.ib()
@@ -353,6 +367,8 @@ def prune_spans(spans, T, lbda=0.4):
         slots = [idx in taken_idxs for idx in span_idxs]
         slots = remove_consec_dupes(slots)
 
+        # Allow spans that overlap with nothing, or spans that are "supersets"
+        # of previously-accepted spans - start to left, end to right.
         if len(slots) == 1 or slots == [False, True, False]:
             pruned.append(span)
             taken_idxs.update(span_idxs)
@@ -364,10 +380,6 @@ def prune_spans(spans, T, lbda=0.4):
     pruned = sorted(pruned, key=lambda s: s.i1)
 
     return pruned
-
-
-def regroup_indexes(seq, size_fn):
-    return reduce(lambda ix, i: (*ix, ix[-1] + size_fn(i)), seq, (0,))
 
 
 class PairScorer(Scorer):
