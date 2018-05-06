@@ -121,7 +121,7 @@ class Document:
             yield self.tokens[i1:i2]
 
     @cached_property
-    def coref_id_to_token_indexes(self):
+    def coref_id_to_index_range(self):
         """Map coref id -> token indexes, grouped by mention.
         """
         id_idx = defaultdict(list)
@@ -140,21 +140,21 @@ class Document:
         return id_idx
 
     @cached_property
-    def coref_id_to_span_indexes(self):
+    def coref_id_to_i1i2(self):
         """Map coref id -> (start, end) span indexes.
         """
         return {
             cid: [(s[0], s[-1]) for s in spans]
-            for cid, spans in self.coref_id_to_token_indexes.items()
+            for cid, spans in self.coref_id_to_index_range.items()
         }
 
     @cached_property
-    def span_indexes_to_ant_indexes(self):
+    def i1i2_to_ant_i1i2(self):
         """Map span (start, end) -> list of (start, end) of antecedents.
         """
         return {
             span: set(spans[:i+1])
-            for _, spans in self.coref_id_to_span_indexes.items()
+            for _, spans in self.coref_id_to_i1i2.items()
             for i, span in enumerate(spans[1:])
         }
 
@@ -340,6 +340,26 @@ class Span:
     @cached_property
     def tokens(self):
         return self.doc.tokens[self.i1:self.i2+1]
+
+    @cached_property
+    def i1i2(self):
+        return (self.i1, self.i2)
+
+    @cached_property
+    def sij_gold_indexes(self):
+        """Get indexes of gold antecedents in the sij score tensor.
+        """
+        ant_i1i2s = self.doc.i1i2_to_ant_i1i2.get(self.i1i2, [])
+
+        sij_idx = [
+            i for i, span in enumerate(self.yi)
+            if span.i1i2 in ant_i1i2s
+        ]
+
+        if not sij_idx:
+            sij_idx = [len(self.sij)-1]
+
+        return sij_idx
 
 
 class SpanScorer(nn.Module):
