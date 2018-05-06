@@ -3,6 +3,7 @@
 import os
 import attr
 import re
+import random
 
 from collections import defaultdict
 from itertools import islice, groupby
@@ -14,7 +15,7 @@ from glob import glob
 
 import torch
 from torchtext.vocab import Vectors
-from torch import nn
+from torch import nn, optim
 from torch.nn import functional as F
 
 from ..cuda import itype, ftype
@@ -84,7 +85,7 @@ class Document:
                     open_clusters.add(cid)
 
                 # Close: 5)
-                elif re.match('^\d+\)$', part):
+                elif re.match('^\d+\)$', part) and cid in open_clusters:
                     open_clusters.remove(cid)
 
                 # Solo: (5)
@@ -507,8 +508,72 @@ class Coref(nn.Module):
 
         # LSTM over tokens.
         embeds, states = self.encode_doc(doc.token_texts())
+        print('test')
 
         spans = self.score_spans(doc, embeds, states)
         spans = prune_spans(spans, len(doc))
 
         return self.score_pairs(spans)
+
+
+class Trainer:
+
+    def __init__(self, train_root, lr=1e-3):
+
+        self.train_corpus = Corpus.from_files(train_root)
+
+        self.model = Coref(self.train_corpus.vocab())
+
+        params = [p for p in self.model.parameters() if p.requires_grad]
+
+        self.optimizer = optim.Adam(params, lr=lr)
+
+        if torch.cuda.is_available():
+            self.model.cuda()
+
+    def train_epoch(self, epoch, batch_size=100):
+
+        print(f'\nEpoch {epoch}')
+
+        self.model.train()
+
+        docs = random.sample(self.train_corpus.documents, batch_size)
+
+        epoch_loss, correct, total = 0, 0, 0
+        for doc in tqdm(docs):
+
+            self.optimizer.zero_grad()
+
+            total += len(doc.i1i2_to_ant_i1i2)
+
+            losses = []
+            for span in self.model(doc):
+
+                # Softmax over possible antecedents.
+                pred = F.softmax(span.sij, dim=0)
+
+                # Get indexes of correct antecedents.
+                yt = span.sij_gold_indexes()
+
+                # Sum mass assigned to correct antecedents.
+                p = sum([pred[i] for i in yt])
+                losses.append(p.log())
+
+                for ix in yt:
+                    if ix != len(pred)-1 and ix == pred.argmax().item():
+                        correct += 1
+
+            loss = sum(losses) / len(losses) * -1
+            loss.backward()
+
+            nn.utils.clip_grad_norm_(self.model.parameters(), 5)
+            self.optimizer.step()
+
+            epoch_loss += loss.item()
+
+        print('Loss: %f' % epoch_loss)
+        if total: print('Correct: %f' % (correct/total))
+
+    def train(self, epochs=10, *args, **kwargs):
+        for epoch in range(epochs):
+            self.train_epoch(epoch, *args, **kwargs)
