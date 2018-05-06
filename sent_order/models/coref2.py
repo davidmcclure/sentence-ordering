@@ -34,6 +34,7 @@ def remove_consec_dupes(seq):
     return [x[0] for x in groupby(seq)]
 
 
+# TODO: Test.
 def regroup_indexes(seq, size_fn):
     """Given a sequence A that contains items of variable size, provide a list
     of indexes that, when iterated as pairs, will slice a flat sequence B into
@@ -119,6 +120,44 @@ class Document:
         for i1, i2 in pairwise(self.sent_start_indexes + [len(self)]):
             yield self.tokens[i1:i2]
 
+    @cached_property
+    def coref_id_to_token_indexes(self):
+        """Map coref id -> token indexes, grouped by mention.
+        """
+        id_idx = defaultdict(list)
+
+        for i, token in enumerate(self.tokens):
+            for cid in token.clusters:
+
+                spans = id_idx[cid]
+
+                if len(spans) and spans[-1][-1] == i-1:
+                    spans[-1].append(i)
+
+                else:
+                    spans.append([i])
+
+        return id_idx
+
+    @cached_property
+    def coref_id_to_span_indexes(self):
+        """Map coref id -> (start, end) span indexes.
+        """
+        return {
+            cid: [(s[0], s[-1]) for s in spans]
+            for cid, spans in self.coref_id_to_token_indexes.items()
+        }
+
+    @cached_property
+    def span_indexes_to_ant_indexes(self):
+        """Map span (start, end) -> list of (start, end) of antecedents.
+        """
+        return {
+            span: set(spans[:i+1])
+            for _, spans in self.coref_id_to_span_indexes.items()
+            for i, span in enumerate(spans[1:])
+        }
+
 
 class GoldFile:
 
@@ -178,6 +217,7 @@ class Corpus:
 
 class WordEmbedding(nn.Embedding):
 
+    # TODO: Turian embeddings.
     def __init__(self, vocab, path='glove.840B.300d.txt'):
         """Set vocab, map s->i.
         """
