@@ -5,6 +5,8 @@ import attr
 import re
 import random
 
+import numpy as np
+
 from collections import defaultdict
 from itertools import islice, groupby
 from functools import reduce
@@ -466,15 +468,18 @@ class PairScorer(Scorer):
             for ix, span in enumerate(spans)
         ]
 
-        # Build pair embeddings.
+        # Form pair embeddings.
         # TODO: Distance / speaker embeds.
-        x = torch.stack([
+        pairs = [
             torch.cat([i.g, j.g, i.g*j.g])
             for i in spans for j in i.yi
-        ])
+        ]
+
+        if not pairs:
+            raise RuntimeError('No candidate pairs after pruning.')
 
         # Get pairwise `sa` scores.
-        scores = self.score(x).view(-1)
+        scores = self.score(torch.stack(pairs)).view(-1)
 
         sa_idx = regroup_indexes(spans, lambda s: len(s.yi))
 
@@ -554,11 +559,14 @@ class Trainer:
 
         docs = random.sample(self.train_corpus.documents, batch_size)
 
-        epoch_loss = 0
+        epoch_loss = []
         for doc in tqdm(docs):
-            epoch_loss += self.train_doc(doc)
+            try:
+                epoch_loss.append(self.train_doc(doc))
+            except RuntimeError as e:
+                print(e)
 
-        print('Loss: %f' % epoch_loss)
+        print('Loss: %f' % np.mean(epoch_loss))
 
     def train_doc(self, doc):
 
@@ -579,7 +587,7 @@ class Trainer:
             p = sum([pred[i] for i in yt])
             losses.append(p.log())
 
-        print(pred)
+        print(span.sij, yt)
 
         loss = sum(losses) / len(losses) * -1
         loss.backward()
@@ -587,4 +595,4 @@ class Trainer:
         nn.utils.clip_grad_norm_(self.model.parameters(), 5)
         self.optimizer.step()
 
-        return loss
+        return loss.item()
