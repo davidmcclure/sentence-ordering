@@ -421,7 +421,7 @@ class SpanScorer(nn.Module):
         # TODO: Can we tolist() here?
         spans = [
             attr.evolve(span, sm=sm)
-            for span, sm in zip(spans, scores.tolist())
+            for span, sm in zip(spans, scores)
         ]
 
         return spans
@@ -561,6 +561,8 @@ class Trainer:
 
         epoch_loss = []
         for doc in tqdm(docs):
+
+            # Handle errors when model over-prunes.
             try:
                 epoch_loss.append(self.train_doc(doc))
             except RuntimeError as e:
@@ -570,6 +572,7 @@ class Trainer:
 
     def train_doc(self, doc):
 
+        # Train on random sub-docs.
         doc = doc.truncate_sents_random()
 
         self.optimizer.zero_grad()
@@ -585,14 +588,17 @@ class Trainer:
 
             # Sum mass assigned to correct antecedents.
             p = sum([pred[i] for i in yt])
+
             losses.append(p.log())
 
-        print(span.sij, yt)
+            for ix in yt:
+                if ix != len(pred)-1 and ix == pred.argmax().item():
+                    print('CORRECT')
 
-        loss = sum(losses) / len(losses) * -1
+        loss = sum(losses) * -1
         loss.backward()
 
-        nn.utils.clip_grad_norm_(self.model.parameters(), 5)
+        # nn.utils.clip_grad_norm_(self.model.parameters(), 5)
         self.optimizer.step()
 
         return loss.item()
