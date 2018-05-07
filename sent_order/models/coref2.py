@@ -54,6 +54,8 @@ def regroup_indexes(seq, size_fn):
 
 @attr.s
 class Token:
+    doc_slug = attr.ib()
+    doc_part = attr.ib()
     text = attr.ib()
     sent_index = attr.ib()
     clusters = attr.ib()
@@ -94,6 +96,8 @@ class Document:
                     clusters.add(cid)
 
             tokens.append(Token(
+                doc_slug=line[0],
+                doc_part=int(line[1]),
                 text=line[3],
                 sent_index=int(line[2]),
                 clusters=clusters,
