@@ -298,6 +298,7 @@ class DocEncoder(nn.Module):
     def forward(self, tokens):
         """BiLSTM over document tokens.
         """
+        # TODO: Char CNN.
         x = self.embeddings.tokens_to_idx(tokens)
         x = x.unsqueeze(0)
 
@@ -341,7 +342,7 @@ class Span:
     # Span embedding tensor.
     g = attr.ib()
 
-    # Unary mention score.
+    # Unary mention score, as tensor.
     sm = attr.ib(default=None)
 
     # List of candidate antecedent spans.
@@ -418,7 +419,7 @@ class SpanScorer(nn.Module):
         scores = self.sm(x).squeeze()
 
         # Set scores on spans.
-        # TODO: Can we tolist() here?
+        # TODO: Scalar sm_sort, for perf?
         spans = [
             attr.evolve(span, sm=sm)
             for span, sm in zip(spans, scores)
@@ -591,14 +592,14 @@ class Trainer:
 
             losses.append(p.log())
 
-            for ix in yt:
-                if ix != len(pred)-1 and ix == pred.argmax().item():
-                    print('CORRECT')
+            yp = pred.argmax().item()
+            if yp != len(pred)-1 and yp in yt:
+                print(span, span.yi[yp])
 
         loss = sum(losses) * -1
         loss.backward()
 
-        # nn.utils.clip_grad_norm_(self.model.parameters(), 5)
+        nn.utils.clip_grad_norm_(self.model.parameters(), 5)
         self.optimizer.step()
 
         return loss.item()
