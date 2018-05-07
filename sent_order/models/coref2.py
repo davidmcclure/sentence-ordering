@@ -641,7 +641,6 @@ class Trainer:
                 print(e)
 
         print('Loss: %f' % np.mean(epoch_loss))
-        self.eval_dev()
 
     def train_doc(self, doc):
         """Train a single doc.
