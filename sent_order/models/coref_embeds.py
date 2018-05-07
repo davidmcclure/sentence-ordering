@@ -327,7 +327,7 @@ class DocEmbedder(nn.Module):
 
         x1 = torch.stack(x1)
         x2 = torch.stack(x2)
-        y = torch.FloatTensor(y)
+        y = torch.FloatTensor(y).type(ftype)
 
         return x1, x2, y
 
