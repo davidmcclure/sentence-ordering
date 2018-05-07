@@ -179,3 +179,91 @@ class Corpus:
             vocab.update([t.text for t in doc.tokens])
 
         return vocab
+
+
+class WordEmbedding(nn.Embedding):
+
+    # TODO: Turian embeddings.
+    def __init__(self, vocab, path='glove.840B.300d.txt'):
+        """Set vocab, map s->i.
+        """
+        loader = Vectors(path)
+
+        # Map string -> intersected index.
+        self.vocab = [v for v in vocab if v in loader.stoi]
+        self._stoi = {s: i for i, s in enumerate(self.vocab)}
+
+        super().__init__(len(self.vocab)+2, loader.dim)
+
+        # Select vectors for vocab words.
+        weights = torch.stack([
+            loader.vectors[loader.stoi[s]]
+            for s in self.vocab
+        ])
+
+        # Padding + UNK zeros rows.
+        weights = torch.cat([
+            torch.zeros((2, loader.dim)),
+            weights,
+        ])
+
+        # Copy in pretrained weights.
+        self.weight.data.copy_(weights)
+
+    def stoi(self, s):
+        """Map string -> embedding index. <UNK> --> 1.
+        """
+        idx = self._stoi.get(s)
+        return idx + 2 if idx is not None else 1
+
+    def tokens_to_idx(self, tokens):
+        """Given a list of tokens, map to embedding indexes.
+        """
+        return torch.LongTensor([self.stoi(t) for t in tokens]).type(itype)
+
+
+class DocEmbedder(nn.Module):
+
+    def __init__(self, vocab, lstm_dim, hidden_dim, embed_dim,
+        lstm_num_layers=1):
+
+        super().__init__()
+
+        self.embeddings = WordEmbedding(vocab)
+
+        self.lstm = nn.LSTM(
+            self.embeddings.weight.shape[1],
+            lstm_dim,
+            bidirectional=True,
+            num_layers=lstm_num_layers,
+            batch_first=True,
+        )
+
+        self.dropout = nn.Dropout()
+
+        self.embed = nn.Sequential(
+            nn.Linear(lstm_dim*2, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, embed_dim),
+        )
+
+    @property
+    def embed_dim(self):
+        return self.embeddings.weight.shape[1]
+
+    def forward(self, tokens):
+        """BiLSTM over document tokens.
+        """
+        # TODO: Char CNN.
+        x = self.embeddings.tokens_to_idx(tokens)
+        x = x.unsqueeze(0)
+
+        embeds = self.embeddings(x)
+        embeds = self.dropout(embeds)
+
+        states, _ = self.lstm(embeds)
+        states = self.dropout(states)
+
+        return self.embed(states).squeeze()
