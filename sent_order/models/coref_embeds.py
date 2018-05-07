@@ -205,11 +205,11 @@ class Corpus:
 
         return vocab
 
-    def training_batches(self, size):
+    def training_batches(self, size, max_sents):
         """Generate batches.
         """
         # Truncate randomly.
-        docs = [d.truncate_sents_random() for d in self.documents]
+        docs = [d.truncate_sents_random(max_sents) for d in self.documents]
 
         # Sort by length, chunk.
         docs = sorted(docs, key=lambda d: len(d))
@@ -351,14 +351,14 @@ class Trainer:
         for epoch in range(epochs):
             self.train_epoch(epoch, *args, **kwargs)
 
-    def train_epoch(self, epoch, batch_size=10):
+    def train_epoch(self, epoch, batch_size=10, max_sents=3):
         """Train a single epoch.
         """
         print(f'\nEpoch {epoch}')
 
         self.model.train()
 
-        batches = self.train_corpus.training_batches(batch_size)
+        batches = self.train_corpus.training_batches(batch_size, max_sents)
 
         epoch_loss = []
         for docs in tqdm(batches):
