@@ -7,7 +7,7 @@ import random
 
 import numpy as np
 
-from itertools import groupby
+from itertools import groupby, combinations
 from boltons.iterutils import pairwise, chunked, windowed
 from tqdm import tqdm
 from cached_property import cached_property
@@ -126,7 +126,7 @@ class Document:
         for i1, i2 in pairwise(self.sent_start_indexes + [len(self)]):
             yield self.tokens[i1:i2]
 
-    def truncate_sents_random(self, max_sents=50):
+    def truncate_sents_random(self, max_sents=10):
         """Randomly truncate sents up to N, return new instance.
         """
         sents = list(self.sents())
@@ -262,7 +262,7 @@ class WordEmbedding(nn.Embedding):
 
 class DocEmbedder(nn.Module):
 
-    def __init__(self, vocab, lstm_dim, hidden_dim, embed_dim,
+    def __init__(self, vocab, lstm_dim=500, hidden_dim=200, embed_dim=20,
         lstm_num_layers=1):
 
         super().__init__()
@@ -307,6 +307,30 @@ class DocEmbedder(nn.Module):
 
         return self.embed(states)
 
+    def train_batch(self, docs):
+        """Embed docs, generate pairs.
+        """
+        embeds = self(docs)
+
+        x1, x2, y = [], [], []
+        for doc, tokens in zip(docs, embeds):
+            for i1, i2 in combinations(range(len(doc)), 2):
+
+                c1 = doc.tokens[i1].clusters
+                c2 = doc.tokens[i2].clusters
+
+                coref = bool(set.intersection(c1, c2)) or (not c1 and not c2)
+
+                x1.append(tokens[i1])
+                x2.append(tokens[i2])
+                y.append(1 if coref else -1)
+
+        x1 = torch.stack(x1)
+        x2 = torch.stack(x2)
+        y = torch.FloatTensor(y)
+
+        return x1, x2, y
+
 
 class Trainer:
 
@@ -334,6 +358,21 @@ class Trainer:
 
         self.model.train()
 
+        batches = self.train_corpus.training_batches(batch_size)
+
         epoch_loss = []
-        for docs in tqdm(self.train_corpus.batches(batch_size)):
-            pass
+        for docs in tqdm(batches):
+
+            self.optimizer.zero_grad()
+
+            x1, x2, y = self.model.train_batch(docs)
+
+            loss = F.cosine_embedding_loss(x1, x2, y)
+            loss.backward()
+
+            self.optimizer.step()
+
+            epoch_loss.append(loss.item())
+            print(loss.item())
+
+        print('Loss: %f' % np.mean(epoch_loss))
