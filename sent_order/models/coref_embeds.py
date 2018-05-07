@@ -205,10 +205,18 @@ class Corpus:
 
         return vocab
 
-    def batches(self, size):
+    def training_batches(self, size):
         """Generate batches.
         """
-        return chunked(self.documents, size)
+        # Truncate randomly.
+        docs = [d.truncate_sents_random() for d in self.documents]
+
+        # Sort by length, chunk.
+        docs = sorted(docs, key=lambda d: len(d))
+        batches = chunked(docs, size)
+
+        # Shuffle lengths.
+        return sorted(batches, key=lambda x: random.random())
 
 
 class WordEmbedding(nn.Embedding):
