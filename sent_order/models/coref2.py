@@ -464,6 +464,7 @@ class PairScorer(Scorer):
         """Map span -> candidate antecedents, score pairs.
         """
         # Take up to K antecedents.
+        # TODO: Don't include spans that overlap?
         spans = [
             attr.evolve(span, yi=spans[ix-250:ix])
             for ix, span in enumerate(spans)
