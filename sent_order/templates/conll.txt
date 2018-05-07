@@ -1,4 +1,5 @@
 #begin document ({{ doc.tokens[0].doc_slug }}); part {{ '%03d' | format(doc.tokens[0].doc_part) }}
-{% for token in doc.tokens %}
-{{ token.doc_slug }}  {{ token.doc_part }}  {{ token.sent_index }}  {{ token.text }}
+{% for token, tag in token_tag %}
+{{ token.doc_slug }}  {{ token.doc_part }}  {{ token.sent_index }}  {{ token.text }}  {{ tag }}
 {% endfor %}
+#end document

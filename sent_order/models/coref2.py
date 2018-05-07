@@ -188,7 +188,23 @@ class Document:
     def to_conll_format(self, clusters):
         """Generate CONLL output format.
         """
-        return conll_tpl.render(doc=self)
+        tags = [set() for _ in range(len(self))]
+
+        for cid, cluster in enumerate(clusters):
+            for i1, i2 in cluster:
+
+                if i1 == i2:
+                    tags[i1].add(f'({cid})')
+
+                else:
+                    tags[i1].add(f'({cid}')
+                    tags[i2].add(f'{cid})')
+
+        tags = ['|'.join(t) if t else '-' for t in tags]
+
+        token_tag = zip(self.tokens, tags)
+
+        return conll_tpl.render(doc=self, token_tag=token_tag)
 
 
 class GoldFile:
