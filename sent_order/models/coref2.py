@@ -224,7 +224,7 @@ class GoldFile:
     def doc_id_lines(self):
         """Group lines by document.
         """
-        return groupby(self.lines(), lambda line: int(line[1]))
+        return groupby(self.lines(), lambda line: line[0])
 
     def documents(self):
         """Parse lines -> tokens, generate documents.
@@ -518,9 +518,14 @@ class PairScorer(Scorer):
         if not pairs:
             raise RuntimeError('No candidate pairs after pruning.')
 
-        # Get pairwise `sa` scores.
-        scores = self.score(torch.stack(pairs)).view(-1)
+        # Get pairwise `sa` scores. (Batch to avoid OOMs.)
+        scores = []
+        for batch in chunked(pairs, 100000):
+            scores.append(torch.stack(batch).view(-1))
 
+        scores = torch.cat(scores)
+
+        # Get indexes to re-group scores by i.
         sa_idx = regroup_indexes(spans, lambda s: len(s.yi))
 
         spans_sij = []
@@ -666,10 +671,6 @@ class Trainer:
         """
         outputs = []
         for doc in tqdm(self.dev_corpus.documents):
-
-            if len(doc) > 500:
-                continue
-
             clusters = self.model.predict(doc)
             outputs.append(doc.to_conll_format(clusters))
 
