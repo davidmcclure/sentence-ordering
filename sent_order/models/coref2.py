@@ -504,7 +504,7 @@ class PairScorer(Scorer):
         # Take up to K antecedents.
         # TODO: Don't include spans that overlap?
         spans = [
-            attr.evolve(span, yi=spans[ix-250:ix])
+            attr.evolve(span, yi=spans[max(0, ix-250):ix])
             for ix, span in enumerate(spans)
         ]
 
@@ -664,5 +664,14 @@ class Trainer:
     def eval_dev(self):
         """Evaluate dev set.
         """
-        for doc in self.dev_corpus.documents:
-            print(self.model.predict(doc))
+        outputs = []
+        for doc in tqdm(self.dev_corpus.documents):
+
+            if len(doc) > 500:
+                continue
+
+            clusters = self.model.predict(doc)
+            outputs.append(doc.to_conll_format(clusters))
+
+        with open('/tmp/dev.conll', 'w') as fh:
+            print('\n'.join(outputs), file=fh)
