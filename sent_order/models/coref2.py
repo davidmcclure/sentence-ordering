@@ -590,6 +590,17 @@ class Coref(nn.Module):
 
         return list(nx.connected_components(graph))
 
+    def dump_conll_preds(self, docs, path):
+        """Write CONLL prediction file.
+        """
+        outputs = []
+        for doc in tqdm(docs):
+            clusters = self.predict(doc)
+            outputs.append(doc.to_conll_format(clusters))
+
+        with open(path, 'w') as fh:
+            print('\n'.join(outputs), file=fh)
+
 
 class Trainer:
 
@@ -665,14 +676,3 @@ class Trainer:
         self.optimizer.step()
 
         return loss.item()
-
-    def eval_dev(self):
-        """Evaluate dev set.
-        """
-        outputs = []
-        for doc in tqdm(self.dev_corpus.documents):
-            clusters = self.model.predict(doc)
-            outputs.append(doc.to_conll_format(clusters))
-
-        with open('/tmp/dev.conll', 'w') as fh:
-            print('\n'.join(outputs), file=fh)
