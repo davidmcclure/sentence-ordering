@@ -28,6 +28,31 @@ def parse_int(text):
     return int(matches[0]) if matches else None
 
 
+def pad_right_and_stack(xs, pad_size=None):
+    """Pad and stack a list of variable-length seqs.
+
+    Args:
+        xs (list[Variable])
+        pad_size (int)
+
+    Returns: stacked xs, sizes
+    """
+    # Default to max seq size.
+    if not pad_size:
+        pad_size = max([len(x) for x in xs])
+
+    padded, sizes = [], []
+    for x in xs:
+
+        px = F.pad(x, (0, pad_size-len(x)))
+        padded.append(px)
+
+        size = min(pad_size, len(x))
+        sizes.append(size)
+
+    return torch.stack(padded), sizes
+
+
 @attr.s
 class Token:
     doc_slug = attr.ib()
@@ -180,6 +205,11 @@ class Corpus:
 
         return vocab
 
+    def batches(self, size):
+        """Generate batches.
+        """
+        return chunked(self.documents, size)
+
 
 class WordEmbedding(nn.Embedding):
 
@@ -253,12 +283,13 @@ class DocEmbedder(nn.Module):
     def embed_dim(self):
         return self.embeddings.weight.shape[1]
 
-    def forward(self, tokens):
+    def forward(self, docs):
         """BiLSTM over document tokens.
         """
-        # TODO: Char CNN.
-        x = self.embeddings.tokens_to_idx(tokens)
-        x = x.unsqueeze(0)
+        x, _ = pad_right_and_stack([
+            self.embeddings.tokens_to_idx(doc.token_texts())
+            for doc in docs
+        ])
 
         embeds = self.embeddings(x)
         embeds = self.dropout(embeds)
@@ -266,4 +297,35 @@ class DocEmbedder(nn.Module):
         states, _ = self.lstm(embeds)
         states = self.dropout(states)
 
-        return self.embed(states).squeeze()
+        return self.embed(states)
+
+
+class Trainer:
+
+    def __init__(self, train_path, lr=1e-3):
+
+        self.train_corpus = Corpus.from_combined_file(train_path)
+
+        self.model = DocEmbedder(self.train_corpus.vocab())
+
+        params = [p for p in self.model.parameters() if p.requires_grad]
+
+        self.optimizer = optim.Adam(params, lr=lr)
+
+        if torch.cuda.is_available():
+            self.model.cuda()
+
+    def train(self, epochs=10, *args, **kwargs):
+        for epoch in range(epochs):
+            self.train_epoch(epoch, *args, **kwargs)
+
+    def train_epoch(self, epoch, batch_size=10):
+        """Train a single epoch.
+        """
+        print(f'\nEpoch {epoch}')
+
+        self.model.train()
+
+        epoch_loss = []
+        for docs in tqdm(self.train_corpus.batches(batch_size)):
+            pass
