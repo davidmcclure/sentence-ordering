@@ -224,7 +224,7 @@ class GoldFile:
     def doc_id_lines(self):
         """Group lines by document.
         """
-        return groupby(self.lines(), lambda line: line[0])
+        return groupby(self.lines(), lambda line: (line[0], line[1]))
 
     def documents(self):
         """Parse lines -> tokens, generate documents.
