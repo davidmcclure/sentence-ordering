@@ -222,6 +222,13 @@ class Corpus:
 
         return cls(docs)
 
+    @classmethod
+    def from_combined_file(cls, path):
+        """Load from merged gold files.
+        """
+        docs = GoldFile(path).documents()
+        return cls(list(docs))
+
     def __init__(self, documents):
         self.documents = documents
 
@@ -540,9 +547,9 @@ class Coref(nn.Module):
 
 class Trainer:
 
-    def __init__(self, train_root, lr=1e-3):
+    def __init__(self, train_path, lr=1e-3):
 
-        self.train_corpus = Corpus.from_files(train_root)
+        self.train_corpus = Corpus.from_combined_file(train_path)
 
         self.model = Coref(self.train_corpus.vocab())
 
