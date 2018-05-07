@@ -6,6 +6,7 @@ import re
 import random
 
 import numpy as np
+import networkx as nx
 
 from collections import defaultdict
 from itertools import islice, groupby
@@ -548,14 +549,23 @@ class Coref(nn.Module):
     def predict(self, doc):
         """Given a doc, generate a set of grouped (i1,i2) mention clusters.
         """
-        pass
+        graph = nx.Graph()
+        for span in self(doc):
+
+            max_idx = span.sij.argmax().item()
+
+            if max_idx < len(span.sij)-1:
+                graph.add_edge(span.i1i2, span.yi[max_idx].i1i2)
+
+        return list(nx.connected_components(graph))
 
 
 class Trainer:
 
-    def __init__(self, train_path, lr=1e-3):
+    def __init__(self, train_path, dev_path, lr=1e-3):
 
         self.train_corpus = Corpus.from_combined_file(train_path)
+        self.dev_corpus = Corpus.from_combined_file(dev_path)
 
         self.model = Coref(self.train_corpus.vocab())
 
@@ -589,6 +599,7 @@ class Trainer:
                 print(e)
 
         print('Loss: %f' % np.mean(epoch_loss))
+        self.eval_dev()
 
     def train_doc(self, doc):
         """Train a single doc.
@@ -623,3 +634,9 @@ class Trainer:
         self.optimizer.step()
 
         return loss.item()
+
+    def eval_dev(self):
+        """Evaluate dev set.
+        """
+        for doc in self.dev_corpus.documents:
+            print(self.model.predict(doc))
