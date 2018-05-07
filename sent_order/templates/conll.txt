@@ -1,0 +1,1 @@
+#begin document ({{ doc.tokens[0].doc_slug }});

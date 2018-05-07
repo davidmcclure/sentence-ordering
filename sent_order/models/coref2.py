@@ -15,6 +15,7 @@ from boltons.iterutils import pairwise, chunked, windowed
 from tqdm import tqdm
 from cached_property import cached_property
 from glob import glob
+from jinja2 import Environment, PackageLoader
 
 import torch
 from torchtext.vocab import Vectors
@@ -22,6 +23,10 @@ from torch import nn, optim
 from torch.nn import functional as F
 
 from ..cuda import itype, ftype
+
+
+jinja_env = Environment(loader=PackageLoader('sent_order', 'templates'))
+conll_tpl = jinja_env.get_template('conll.txt')
 
 
 def parse_int(text):
@@ -179,6 +184,11 @@ class Document:
             for _, spans in self.coref_id_to_i1i2.items()
             for i, span in enumerate(spans[1:])
         }
+
+    def to_conll_format(self, clusters):
+        """Generate CONLL output format.
+        """
+        return conll_tpl.render(doc=self)
 
 
 class GoldFile:

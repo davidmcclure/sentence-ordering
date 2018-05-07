@@ -24,3 +24,4 @@ annoy
 torchtext
 scandir
 networkx
+Jinja2
