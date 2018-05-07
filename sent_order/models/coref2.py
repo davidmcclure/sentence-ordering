@@ -535,7 +535,8 @@ class Coref(nn.Module):
         self.score_pairs = PairScorer(gij_dim)
 
     def forward(self, doc):
-
+        """Generate spans with yi / sij.
+        """
         # LSTM over tokens.
         embeds, states = self.encode_doc(doc.token_texts())
 
@@ -543,6 +544,11 @@ class Coref(nn.Module):
         spans = prune_spans(spans, len(doc))
 
         return self.score_pairs(spans)
+
+    def predict(self, doc):
+        """Given a doc, generate a set of grouped (i1,i2) mention clusters.
+        """
+        pass
 
 
 class Trainer:
@@ -565,7 +571,8 @@ class Trainer:
             self.train_epoch(epoch, *args, **kwargs)
 
     def train_epoch(self, epoch, batch_size=100):
-
+        """Train a single epoch.
+        """
         print(f'\nEpoch {epoch}')
 
         self.model.train()
@@ -584,7 +591,8 @@ class Trainer:
         print('Loss: %f' % np.mean(epoch_loss))
 
     def train_doc(self, doc):
-
+        """Train a single doc.
+        """
         # Train on random sub-docs.
         doc = doc.truncate_sents_random()
 
