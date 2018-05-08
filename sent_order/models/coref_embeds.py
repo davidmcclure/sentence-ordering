@@ -263,7 +263,7 @@ class WordEmbedding(nn.Embedding):
 class DocEmbedder(nn.Module):
 
     def __init__(self, vocab, lstm_dim=500, hidden_dim=200, embed_dim=20,
-        lstm_num_layers=2):
+        lstm_num_layers=1):
 
         super().__init__()
 
@@ -285,6 +285,7 @@ class DocEmbedder(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.Tanh(),
             nn.Linear(hidden_dim, embed_dim),
+            nn.Tanh(),
         )
 
     @property
@@ -337,7 +338,7 @@ class Trainer:
         batches = self.train_corpus.training_batches(batch_size, max_sents)
 
         epoch_loss = []
-        for docs in tqdm(batches[:10]):
+        for docs in tqdm(batches):
 
             try:
                 epoch_loss.append(self.train_batch(docs))
