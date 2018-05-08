@@ -263,7 +263,7 @@ class WordEmbedding(nn.Embedding):
 class DocEmbedder(nn.Module):
 
     def __init__(self, vocab, lstm_dim=500, hidden_dim=200, embed_dim=20,
-        lstm_num_layers=1):
+        lstm_num_layers=2):
 
         super().__init__()
 
@@ -281,9 +281,9 @@ class DocEmbedder(nn.Module):
 
         self.embed = nn.Sequential(
             nn.Linear(lstm_dim*2, hidden_dim),
-            nn.ReLU(),
+            nn.Tanh(),
             nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
+            nn.Tanh(),
             nn.Linear(hidden_dim, embed_dim),
         )
 
@@ -307,30 +307,6 @@ class DocEmbedder(nn.Module):
 
         return self.embed(states)
 
-    def train_batch(self, docs):
-        """Embed docs, generate pairs.
-        """
-        embeds = self(docs)
-
-        x1, x2, y = [], [], []
-        for doc, tokens in zip(docs, embeds):
-            for i1, i2 in combinations(range(len(doc)), 2):
-
-                c1 = doc.tokens[i1].clusters
-                c2 = doc.tokens[i2].clusters
-
-                coref = bool(set.intersection(c1, c2)) or (not c1 and not c2)
-
-                x1.append(tokens[i1])
-                x2.append(tokens[i2])
-                y.append(1 if coref else -1)
-
-        x1 = torch.stack(x1)
-        x2 = torch.stack(x2)
-        y = torch.FloatTensor(y).type(ftype)
-
-        return x1, x2, y
-
 
 class Trainer:
 
@@ -351,7 +327,7 @@ class Trainer:
         for epoch in range(epochs):
             self.train_epoch(epoch, *args, **kwargs)
 
-    def train_epoch(self, epoch, batch_size=10, max_sents=3):
+    def train_epoch(self, epoch, batch_size=10, max_sents=10):
         """Train a single epoch.
         """
         print(f'\nEpoch {epoch}')
@@ -363,16 +339,42 @@ class Trainer:
         epoch_loss = []
         for docs in tqdm(batches):
 
-            self.optimizer.zero_grad()
-
-            x1, x2, y = self.model.train_batch(docs)
-
-            loss = F.cosine_embedding_loss(x1, x2, y)
-            loss.backward()
-
-            self.optimizer.step()
-
-            epoch_loss.append(loss.item())
-            print(loss.item())
+            try:
+                epoch_loss.append(self.train_batch(docs))
+            except Exception as e:
+                print(e, docs)
 
         print('Loss: %f' % np.mean(epoch_loss))
+
+    def train_batch(self, docs):
+        """Embed docs, generate pairs.
+        """
+        self.optimizer.zero_grad()
+
+        embeds = self.model(docs)
+
+        # Get positive / negative examples.
+        x1, x2, y = [], [], []
+        for doc, tokens in zip(docs, embeds):
+            for i1, i2 in combinations(range(len(doc)), 2):
+
+                c1 = doc.tokens[i1].clusters
+                c2 = doc.tokens[i2].clusters
+
+                # Connected if both have coref tag, or both empty.
+                coref = bool(set.intersection(c1, c2)) or (not c1 and not c2)
+
+                x1.append(tokens[i1])
+                x2.append(tokens[i2])
+                y.append(1 if coref else -1)
+
+        x1 = torch.stack(x1)
+        x2 = torch.stack(x2)
+        y = torch.FloatTensor(y).type(ftype)
+
+        loss = F.cosine_embedding_loss(x1, x2, y)
+        loss.backward()
+
+        self.optimizer.step()
+
+        return loss.item()
