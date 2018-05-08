@@ -311,6 +311,30 @@ class WordEmbedding(nn.Embedding):
         return torch.LongTensor([self.stoi(t) for t in tokens]).type(itype)
 
 
+class DistanceEmbedding(nn.Embedding):
+
+    def __init__(self, embed_dim=20):
+
+        self.bins = (
+            lambda d: d == 0,
+            lambda d: d == 1,
+            lambda d: d == 2,
+            lambda d: d == 3,
+            lambda d: d == 4,
+            lambda d: d in range(5,8),
+            lambda d: d in range(8,16),
+            lambda d: d in range(16,32),
+            lambda d: d in range(32,64),
+            lambda d: d > 64,
+        )
+
+        return super().__init__(len(self.bins), embed_dim)
+
+    def dtoi(self, d):
+        for i, func in enumerate(self.bins):
+            if func(d): return i
+
+
 class DocEncoder(nn.Module):
 
     def __init__(self, vocab, lstm_dim, lstm_num_layers=1):
