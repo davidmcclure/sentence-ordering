@@ -262,7 +262,7 @@ class WordEmbedding(nn.Embedding):
 
 class DocEmbedder(nn.Module):
 
-    def __init__(self, vocab, lstm_dim=500, hidden_dim=200, embed_dim=20,
+    def __init__(self, vocab, lstm_dim=500, hidden_dim=200, embed_dim=50,
         lstm_num_layers=1):
 
         super().__init__()
@@ -285,7 +285,6 @@ class DocEmbedder(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.Tanh(),
             nn.Linear(hidden_dim, embed_dim),
-            nn.Tanh(),
         )
 
     @property
@@ -296,8 +295,8 @@ class DocEmbedder(nn.Module):
         """BiLSTM over document tokens.
         """
         x, _ = pad_right_and_stack([
-            self.embeddings.tokens_to_idx(doc.token_texts())
-            for doc in docs
+            self.embeddings.tokens_to_idx(tokens)
+            for tokens in docs
         ])
 
         embeds = self.embeddings(x)
@@ -341,29 +340,50 @@ class Trainer:
         for docs in tqdm(batches):
 
             try:
-                epoch_loss.append(self.train_batch(docs))
+                embeds, loss = self.train_batch(docs)
+                epoch_loss.append(loss)
             except Exception as e:
                 print(e, docs)
 
         print('Loss: %f' % np.mean(epoch_loss))
+        print(embeds[0][0])
 
     def train_batch(self, docs):
         """Embed docs, generate pairs.
         """
         self.optimizer.zero_grad()
 
-        embeds = self.model(docs)
+        tokens = [d.token_texts() for d in docs]
+
+        embeds = self.model(tokens)
 
         # Get positive / negative examples.
         x1, x2, y = [], [], []
         for doc, tokens in zip(docs, embeds):
-            for i1, i2 in combinations(range(len(doc)), 2):
+
+            cidx, eidx = [], []
+            for i, t in enumerate(doc.tokens):
+                if t.clusters:
+                    cidx.append(i)
+                else:
+                    eidx.append(i)
+
+            if len(eidx) > len(cidx):
+                eidx = random.sample(eidx, len(cidx))
+
+            whitelist = cidx + eidx
+
+            pairs = list(combinations(whitelist, 2))
+            random.shuffle(pairs)
+
+            for i1, i2 in pairs[:1000]:
 
                 c1 = doc.tokens[i1].clusters
                 c2 = doc.tokens[i2].clusters
 
                 # Connected if both have coref tag, or both empty.
-                coref = bool(set.intersection(c1, c2)) or (not c1 and not c2)
+                coref = (bool(set.intersection(c1, c2)) or
+                    (not c1 and not c2))
 
                 x1.append(tokens[i1])
                 x2.append(tokens[i2])
@@ -378,4 +398,4 @@ class Trainer:
 
         self.optimizer.step()
 
-        return loss.item()
+        return embeds, loss.item()
