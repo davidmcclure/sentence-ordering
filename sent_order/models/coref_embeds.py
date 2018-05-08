@@ -337,7 +337,7 @@ class Trainer:
         batches = self.train_corpus.training_batches(batch_size, max_sents)
 
         epoch_loss = []
-        for docs in tqdm(batches):
+        for docs in tqdm(batches[:10]):
 
             try:
                 epoch_loss.append(self.train_batch(docs))
