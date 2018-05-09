@@ -304,7 +304,6 @@ class DocEmbedder(nn.Module):
 
         x, _ = self.lstm(x)
         x = self.dropout(x)
-        print(x.shape)
 
         return self.embed(x)
 
