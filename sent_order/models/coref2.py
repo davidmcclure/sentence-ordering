@@ -334,6 +334,9 @@ class DistanceEmbedding(nn.Embedding):
         for i, func in enumerate(self.bins):
             if func(d): return i
 
+    def dtoe(self, d):
+        return self(torch.LongTensor([self.dtoi(d)])).squeeze()
+
     def forward(self, ds):
         ds = torch.cat([torch.LongTensor([self.dtoi(d)]) for d in ds])
         return super().forward(ds)
@@ -460,7 +463,7 @@ class SpanScorer(nn.Module):
         attns = self.attention(states)
 
         # Slice out spans, build encodings.
-        spans, gs = [], []
+        spans = []
         for n in range(1, 11):
             for w in windowed(range(len(doc.tokens)), n):
 
@@ -474,17 +477,16 @@ class SpanScorer(nn.Module):
                 attn = F.softmax(span_attns.squeeze(), dim=0)
                 attn = sum(span_embeds * attn.view(-1, 1))
 
+                # Span width embedding.
+                # TODO: Batch?
+                width = self.width_embeddings.dtoe(i2-i1+1)
+
                 # Left LSTM + right LSTM + attention + width.
-                g = torch.cat([span_states[0], span_states[-1], attn])
+                g = torch.cat([span_states[0], span_states[-1], attn, width])
 
-                spans.append(Span(doc, i1, i2))
-                gs.append(g)
+                spans.append(Span(doc, i1, i2, g))
 
-        gs = torch.stack(gs)
-
-        # Cat on width embeddings.
-        widths = self.width_embeddings([s.i2-s.i1+1 for s in spans])
-        gs = torch.cat([gs, widths], dim=1)
+        gs = torch.stack([s.g for s in spans])
 
         # Unary scores for spans.
         sms = self.sm(gs).squeeze()
@@ -492,8 +494,8 @@ class SpanScorer(nn.Module):
         # Set scores on spans.
         # TODO: Scalar sm_sort, for perf?
         spans = [
-            attr.evolve(span, g=g, sm=sm)
-            for span, g, sm in zip(spans, gs, sms)
+            attr.evolve(span, sm=sm)
+            for span, sm in zip(spans, sms)
         ]
 
         return spans
@@ -545,20 +547,18 @@ class PairScorer(nn.Module):
             for ix, span in enumerate(spans)
         ]
 
-        pairs, dists = [], []
+        # Build pair embeddings.
+        # TODO: Batch distance lookups?
+        pairs = []
         for i in spans:
             for j in i.yi:
-                pairs.append(torch.cat([i.g, j.g, i.g*j.g]))
-                dists.append(i.i1 - j.i1)
+                dist = self.dist_embeddings.dtoe(i.i1-j.i1)
+                pairs.append(torch.cat([i.g, j.g, i.g*j.g, dist]))
 
         if not pairs:
             raise RuntimeError('No candidate pairs after pruning.')
 
         pairs = torch.stack(pairs)
-
-        # Cat on distance embeddings.
-        dists = self.dist_embeddings(dists)
-        pairs = torch.cat([pairs, dists], dim=1)
 
         # Get pairwise `sa` scores.
         # TODO: Batch for big eval inputs?
