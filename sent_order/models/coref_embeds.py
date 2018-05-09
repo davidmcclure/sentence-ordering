@@ -432,7 +432,7 @@ class Trainer:
         epoch_loss = []
         for docs in tqdm(batches):
 
-            # try:
+            try:
 
                 self.optimizer.zero_grad()
 
@@ -445,8 +445,8 @@ class Trainer:
 
                 epoch_loss.append(loss.item())
 
-            # except RuntimeError as e:
-            #     print(e)
+            except RuntimeError as e:
+                print(e)
 
         print('Loss: %f' % np.mean(epoch_loss))
         print('Dev loss: %f' % self.dev_loss())
