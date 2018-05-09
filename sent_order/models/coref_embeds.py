@@ -304,6 +304,7 @@ class DocEmbedder(nn.Module):
 
         x, _ = self.lstm(x)
         x = self.dropout(x)
+        print(x.shape)
 
         return self.embed(x)
 
@@ -353,6 +354,9 @@ class DocEmbedder(nn.Module):
                 x2.append(tokens[i2])
                 y.append(1 if coref else -1)
 
+        if not x1:
+            raise RuntimeError('No coref clusters in batch.')
+
         x1 = torch.stack(x1)
         x2 = torch.stack(x2)
         y = torch.FloatTensor(y).type(ftype)
@@ -400,16 +404,21 @@ class Trainer:
         epoch_loss = []
         for docs in tqdm(batches):
 
-            self.optimizer.zero_grad()
+            try:
 
-            x1, x2, y = self.model.embed_training_pairs(docs)
+                self.optimizer.zero_grad()
 
-            loss = F.cosine_embedding_loss(x1, x2, y)
-            loss.backward()
+                x1, x2, y = self.model.embed_training_pairs(docs)
 
-            self.optimizer.step()
+                loss = F.cosine_embedding_loss(x1, x2, y)
+                loss.backward()
 
-            epoch_loss.append(loss.item())
+                self.optimizer.step()
+
+                epoch_loss.append(loss.item())
+
+            except RuntimeError as e:
+                print(e)
 
         print('Loss: %f' % np.mean(epoch_loss))
         print('Dev loss: %f' % self.dev_loss())
@@ -421,8 +430,14 @@ class Trainer:
 
         losses = []
         for docs in tqdm(self.dev_batches):
-            x1, x2, y = self.model.embed_training_pairs(docs)
-            loss = F.cosine_embedding_loss(x1, x2, y)
-            losses.append(loss.item())
+
+            try:
+
+                x1, x2, y = self.model.embed_training_pairs(docs)
+                loss = F.cosine_embedding_loss(x1, x2, y)
+                losses.append(loss.item())
+
+            except RuntimeError as e:
+                print(e)
 
         return np.mean(losses)
