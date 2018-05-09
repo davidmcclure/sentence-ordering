@@ -314,28 +314,11 @@ class WordEmbedding(nn.Embedding):
 class DistanceEmbedding(nn.Embedding):
 
     def __init__(self, embed_dim=20):
-
-        self.bins = (
-            lambda d: d == 0,
-            lambda d: d == 1,
-            lambda d: d == 2,
-            lambda d: d == 3,
-            lambda d: d == 4,
-            lambda d: d in range(5,8),
-            lambda d: d in range(8,16),
-            lambda d: d in range(16,32),
-            lambda d: d in range(32,64),
-            lambda d: d >= 64,
-        )
-
+        self.bins = (1, 2, 3, 4, 8, 16, 32, 64)
         return super().__init__(len(self.bins), embed_dim)
 
     def dtoi(self, d):
-        for i, func in enumerate(self.bins):
-            if func(d): return i
-
-    def dtoe(self, d):
-        return self(torch.LongTensor([self.dtoi(d)])).squeeze()
+        return sum([True for i in self.bins if d >= i])
 
     def forward(self, ds):
         ds = torch.cat([torch.LongTensor([self.dtoi(d)]) for d in ds])
@@ -527,6 +510,7 @@ def prune_spans(spans, T, lbda=0.4):
     pruned = pruned[:round(T*lbda)]
 
     # Order by left doc index.
+    # TODO: Sort by i2 too?
     pruned = sorted(pruned, key=lambda s: s.i1)
 
     return pruned
