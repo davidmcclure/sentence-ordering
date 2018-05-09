@@ -326,6 +326,10 @@ class DocEmbedder(nn.Module):
                 else:
                     eidx.append(i)
 
+            # Skip if no coref clusters.
+            if not cidx:
+                continue
+
             # Clamp empty indexes to size of coref indexes.
             if len(eidx) > len(cidx):
                 eidx = random.sample(eidx, len(cidx))
