@@ -450,11 +450,11 @@ class Span:
 
 class SpanScorer(nn.Module):
 
-    def __init__(self, state_dim, gi_dim):
+    def __init__(self, state_dim, width_dim, gi_dim):
         super().__init__()
         self.attention = Scorer(state_dim)
+        self.width_embeddings = DistanceEmbedding(width_dim)
         self.sm = Scorer(gi_dim)
-        self.width_embeddings = DistanceEmbedding()
 
     def forward(self, doc, embeds, states):
         """Generate spans, attend over LSTM states, form encodings.
@@ -533,9 +533,9 @@ def prune_spans(spans, T, lbda=0.4):
 
 class PairScorer(nn.Module):
 
-    def __init__(self, gij_dim):
+    def __init__(self, dist_dim, gij_dim):
         super().__init__()
-        self.dist_embeddings = DistanceEmbedding()
+        self.dist_embeddings = DistanceEmbedding(dist_dim)
         self.sa = Scorer(gij_dim)
 
     def forward(self, spans):
@@ -587,7 +587,7 @@ class PairScorer(nn.Module):
 
 class Coref(nn.Module):
 
-    def __init__(self, vocab, lstm_dim=200):
+    def __init__(self, vocab, lstm_dim=200, size_dim=20):
 
         super().__init__()
 
@@ -596,15 +596,14 @@ class Coref(nn.Module):
         # LSTM forward + back.
         state_dim = lstm_dim * 2
 
-        # Left + right LSTM states, head attention.
-        # TODO: Derive width embed size.
-        gi_dim = state_dim * 2 + self.encode_doc.embed_dim + 20
+        # Left + right LSTM states, head attention, width.
+        gi_dim = state_dim * 2 + self.encode_doc.embed_dim + size_dim
 
-        # i, j, i*j
-        gij_dim = gi_dim * 3 + 20
+        # i, j, i*j, dist
+        gij_dim = gi_dim * 3 + size_dim
 
-        self.score_spans = SpanScorer(state_dim, gi_dim)
-        self.score_pairs = PairScorer(gij_dim)
+        self.score_spans = SpanScorer(state_dim, size_dim, gi_dim)
+        self.score_pairs = PairScorer(size_dim, gij_dim)
 
     def forward(self, doc):
         """Generate spans with yi / sij.
