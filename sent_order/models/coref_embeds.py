@@ -279,8 +279,14 @@ class DocEmbedder(nn.Module):
 
         self.dropout = nn.Dropout()
 
+        self.attend = nn.Sequential(
+            nn.Linear((lstm_dim*4+1)*2, hidden_dim),
+            nn.Tanh(),
+            nn.Linear(hidden_dim, 1),
+        )
+
         self.embed = nn.Sequential(
-            nn.Linear(lstm_dim*4+1, hidden_dim),
+            nn.Linear((lstm_dim*4+1)*2, hidden_dim),
             nn.Tanh(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.Tanh(),
@@ -305,13 +311,33 @@ class DocEmbedder(nn.Module):
         x, (hn, _) = self.lstm(x)
         x = self.dropout(x)
 
+        # LSTM final states.
         finals = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
         finals = finals.unsqueeze(1).expand(x.shape)
         x = torch.cat([x, finals], dim=2)
 
+        # Token positions.
         pos = torch.range(0, x.shape[1]-1)
         pos = pos.expand(x.shape[0], x.shape[1]).unsqueeze(2)
         x = torch.cat([x, pos], dim=2)
+
+        pairs = []
+        for d in x:
+            for t1 in d:
+                for t2 in d:
+                    pairs.append(torch.cat([t1, t2]))
+
+        pairs = torch.stack(pairs)
+        scores = self.attend(pairs)
+        scores = scores.view(x.shape[0], x.shape[1], -1)
+        w = F.softmax(scores, 2)
+
+        attn = x.unsqueeze(1)
+        attn = attn.expand(x.shape[0], x.shape[1], x.shape[1], x.shape[2])
+        attn = attn * w.unsqueeze(3)
+        attn = attn.sum(2)
+
+        x = torch.cat([x, attn], dim=2)
 
         return self.embed(x)
 
