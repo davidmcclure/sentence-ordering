@@ -299,13 +299,13 @@ class DocEmbedder(nn.Module):
             for tokens in docs
         ])
 
-        embeds = self.embeddings(x)
-        embeds = self.dropout(embeds)
+        x = self.embeddings(x)
+        x = self.dropout(embeds)
 
-        states, _ = self.lstm(embeds)
-        states = self.dropout(states)
+        x, _ = self.lstm(x)
+        x = self.dropout(x)
 
-        return self.embed(states)
+        return self.embed(x)
 
 
 class Trainer:
