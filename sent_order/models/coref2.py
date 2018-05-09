@@ -334,8 +334,8 @@ class DistanceEmbedding(nn.Embedding):
         for i, func in enumerate(self.bins):
             if func(d): return i
 
-    # def dtoe(self, d):
-    #     return self(torch.LongTensor([self.dtoi(d)])).squeeze()
+    def dtoe(self, d):
+        return self(torch.LongTensor([self.dtoi(d)])).squeeze()
 
 
 class DocEncoder(nn.Module):
@@ -405,7 +405,7 @@ class Span:
     i2 = attr.ib()
 
     # Span embedding tensor.
-    g = attr.ib()
+    g = attr.ib(default=None)
 
     # Unary mention score, as tensor.
     sm = attr.ib(default=None)
@@ -450,6 +450,7 @@ class SpanScorer(nn.Module):
         super().__init__()
         self.attention = Scorer(state_dim)
         self.sm = Scorer(gi_dim)
+        self.width_embeddings = DistanceEmbedding()
 
     def forward(self, doc, embeds, states):
         """Generate spans, attend over LSTM states, form encodings.
@@ -472,9 +473,11 @@ class SpanScorer(nn.Module):
                 attn = F.softmax(span_attns.squeeze(), dim=0)
                 attn = sum(span_embeds * attn.view(-1, 1))
 
-                # Left LSTM + right LSTM + attention.
-                # TODO: Embedded span size phi.
-                g = torch.cat([span_states[0], span_states[-1], attn])
+                # Span width embedding
+                width = self.width_embeddings.dtoe(i2-i1+1)
+
+                # Left LSTM + right LSTM + attention + width.
+                g = torch.cat([span_states[0], span_states[-1], attn, width])
 
                 spans.append(Span(doc, i1, i2, g))
 
@@ -582,7 +585,8 @@ class Coref(nn.Module):
         state_dim = lstm_dim * 2
 
         # Left + right LSTM states, head attention.
-        gi_dim = state_dim * 2 + self.encode_doc.embed_dim
+        # TODO: Derive width embed size.
+        gi_dim = state_dim * 2 + self.encode_doc.embed_dim + 20
 
         # i, j, i*j
         gij_dim = gi_dim * 3
@@ -659,10 +663,10 @@ class Trainer:
         for doc in tqdm(docs):
 
             # Handle errors when model over-prunes.
-            try:
-                epoch_loss.append(self.train_doc(doc))
-            except RuntimeError as e:
-                print(e)
+            # try:
+            epoch_loss.append(self.train_doc(doc))
+            # except RuntimeError as e:
+            #     print(e)
 
         print('Loss: %f' % np.mean(epoch_loss))
 
