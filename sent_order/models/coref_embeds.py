@@ -358,9 +358,14 @@ class DocEmbedder(nn.Module):
 
 class Trainer:
 
-    def __init__(self, train_path, lr=1e-3):
+    def __init__(self, train_path, dev_path, lr=1e-3,
+        batch_size=10, max_sents=10):
+
+        self.batch_size = batch_size
+        self.max_sents = max_sents
 
         self.train_corpus = Corpus.from_combined_file(train_path)
+        self.dev_corpus = Corpus.from_combined_file(dev_path)
 
         self.model = DocEmbedder(self.train_corpus.vocab())
 
@@ -371,40 +376,49 @@ class Trainer:
         if torch.cuda.is_available():
             self.model.cuda()
 
+        self.dev_batches = self.dev_corpus.training_batches(
+            self.batch_size, self.max_sents)
+
     def train(self, epochs=10, *args, **kwargs):
         for epoch in range(epochs):
             self.train_epoch(epoch, *args, **kwargs)
 
-    def train_epoch(self, epoch, batch_size=10, max_sents=10):
+    def train_epoch(self, epoch):
         """Train a single epoch.
         """
         print(f'\nEpoch {epoch}')
 
         self.model.train()
 
-        batches = self.train_corpus.training_batches(batch_size, max_sents)
+        batches = self.train_corpus.training_batches(
+            self.batch_size, self.max_sents)
 
         epoch_loss = []
         for docs in tqdm(batches):
 
-            try:
-                loss = self.train_batch(docs)
-                epoch_loss.append(loss)
-            except Exception as e:
-                print(e, docs)
+            self.optimizer.zero_grad()
+
+            x1, x2, y = self.model.embed_training_pairs(docs)
+
+            loss = F.cosine_embedding_loss(x1, x2, y)
+            loss.backward()
+
+            self.optimizer.step()
+
+            epoch_loss.append(loss.item())
 
         print('Loss: %f' % np.mean(epoch_loss))
+        print('Dev loss: %f' % self.dev_loss())
 
-    def train_batch(self, docs):
-        """Embed docs, generate pairs.
+    def dev_loss(self):
+        """Get dev loss.
         """
-        self.optimizer.zero_grad()
+        self.model.eval()
 
-        x1, x2, y = self.model.embed_training_pairs(docs)
+        losses = []
+        for docs in tqdm(self.dev_batches):
+            x1, x2, y = self.model.embed_training_pairs(docs)
+            loss = F.cosine_embedding_loss(x1, x2, y)
+            losses.append(loss.item())
 
-        loss = F.cosine_embedding_loss(x1, x2, y)
-        loss.backward()
-
-        self.optimizer.step()
-
-        return loss.item()
+        return np.mean(losses)
