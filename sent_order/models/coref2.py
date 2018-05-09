@@ -325,7 +325,7 @@ class DistanceEmbedding(nn.Embedding):
             lambda d: d in range(8,16),
             lambda d: d in range(16,32),
             lambda d: d in range(32,64),
-            lambda d: d > 64,
+            lambda d: d >= 64,
         )
 
         return super().__init__(len(self.bins), embed_dim)
@@ -474,6 +474,7 @@ class SpanScorer(nn.Module):
                 attn = sum(span_embeds * attn.view(-1, 1))
 
                 # Span width embedding
+                # TODO: Batch embedding lookups?
                 width = self.width_embeddings.dtoe(i2-i1+1)
 
                 # Left LSTM + right LSTM + attention + width.
@@ -526,31 +527,37 @@ def prune_spans(spans, T, lbda=0.4):
     return pruned
 
 
-class PairScorer(Scorer):
+class PairScorer(nn.Module):
+
+    def __init__(self, gij_dim):
+        super().__init__()
+        self.dist_embeddings = DistanceEmbedding()
+        self.sa = Scorer(gij_dim)
 
     def forward(self, spans):
         """Map span -> candidate antecedents, score pairs.
         """
         # Take up to K antecedents.
-        # TODO: Don't include spans that overlap?
         spans = [
             attr.evolve(span, yi=spans[max(0, ix-250):ix])
             for ix, span in enumerate(spans)
         ]
 
         # Form pair embeddings.
-        # TODO: Distance / speaker embeds.
-        pairs = [
-            torch.cat([i.g, j.g, i.g*j.g])
-            for i in spans for j in i.yi
-        ]
+        # TODO: Batch embedding lookups?
+        pairs = []
+        for i in spans:
+            for j in i.yi:
+                dist = self.dist_embeddings.dtoe(i.i1-j.i1)
+                pair = torch.cat([i.g, j.g, i.g*j.g, dist])
+                pairs.append(pair)
 
         if not pairs:
             raise RuntimeError('No candidate pairs after pruning.')
 
-         # Get pairwise `sa` scores.
-         # TODO: Batch for big eval inputs?
-        scores = self.score(torch.stack(pairs)).view(-1)
+        # Get pairwise `sa` scores.
+        # TODO: Batch for big eval inputs?
+        scores = self.sa(torch.stack(pairs)).view(-1)
 
         # Get indexes to re-group scores by i.
         sa_idx = regroup_indexes(spans, lambda s: len(s.yi))
@@ -589,7 +596,7 @@ class Coref(nn.Module):
         gi_dim = state_dim * 2 + self.encode_doc.embed_dim + 20
 
         # i, j, i*j
-        gij_dim = gi_dim * 3
+        gij_dim = gi_dim * 3 + 20
 
         self.score_spans = SpanScorer(state_dim, gi_dim)
         self.score_pairs = PairScorer(gij_dim)
@@ -663,10 +670,10 @@ class Trainer:
         for doc in tqdm(docs):
 
             # Handle errors when model over-prunes.
-            # try:
-            epoch_loss.append(self.train_doc(doc))
-            # except RuntimeError as e:
-            #     print(e)
+            try:
+                epoch_loss.append(self.train_doc(doc))
+            except RuntimeError as e:
+                print(e)
 
         print('Loss: %f' % np.mean(epoch_loss))
 
