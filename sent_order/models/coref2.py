@@ -714,6 +714,6 @@ class Trainer:
         loss.backward()
 
         nn.utils.clip_grad_norm_(self.model.parameters(), 5)
-        # self.optimizer.step()
+        self.optimizer.step()
 
         return loss.item()
