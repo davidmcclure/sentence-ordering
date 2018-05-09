@@ -317,18 +317,18 @@ class DocEmbedder(nn.Module):
         x = torch.cat([x, finals], dim=2)
 
         # Token positions.
-        pos = torch.range(0, x.shape[1]-1).type(ftype)
+        pos = torch.arange(0, x.shape[1]).type(ftype)
         pos = pos.expand(x.shape[0], x.shape[1]).unsqueeze(2)
         x = torch.cat([x, pos], dim=2)
 
         # Attend over other hiddens.
 
-        pairs = torch.stack([
-            torch.cat([t1, t2])
+        scores = torch.stack([
+            torch.dot(t1, t2)
             for d in x for t1 in d for t2 in d
         ])
 
-        scores = self.attend(pairs)
+        # scores = self.attend(pairs)
         scores = scores.view(x.shape[0], x.shape[1], -1)
         w = F.softmax(scores, 2)
 
@@ -336,7 +336,6 @@ class DocEmbedder(nn.Module):
         attn = attn.expand(x.shape[0], x.shape[1], x.shape[1], x.shape[2])
         attn = attn * w.unsqueeze(3)
         attn = attn.sum(2)
-
         x = torch.cat([x, attn], dim=2)
 
         return self.embed(x)
@@ -433,7 +432,7 @@ class Trainer:
         epoch_loss = []
         for docs in tqdm(batches):
 
-            try:
+            # try:
 
                 self.optimizer.zero_grad()
 
@@ -446,8 +445,8 @@ class Trainer:
 
                 epoch_loss.append(loss.item())
 
-            except RuntimeError as e:
-                print(e)
+            # except RuntimeError as e:
+            #     print(e)
 
         print('Loss: %f' % np.mean(epoch_loss))
         print('Dev loss: %f' % self.dev_loss())
