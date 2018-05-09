@@ -300,12 +300,60 @@ class DocEmbedder(nn.Module):
         ])
 
         x = self.embeddings(x)
-        x = self.dropout(embeds)
+        x = self.dropout(x)
 
         x, _ = self.lstm(x)
         x = self.dropout(x)
 
         return self.embed(x)
+
+    def embed_training_pairs(self, docs, skim=1000):
+        """Build (token1, token2, coref flag) pairs.
+        """
+        tokens = [d.token_texts() for d in docs]
+
+        embeds = self(tokens)
+
+        # Get positive / negative examples.
+        x1, x2, y = [], [], []
+        for doc, tokens in zip(docs, embeds):
+
+            # Get indexes of tokens in / not in clusters.
+            cidx, eidx = [], []
+            for i, t in enumerate(doc.tokens):
+                if t.clusters:
+                    cidx.append(i)
+                else:
+                    eidx.append(i)
+
+            # Clamp empty indexes to size of coref indexes.
+            if len(eidx) > len(cidx):
+                eidx = random.sample(eidx, len(cidx))
+
+            whitelist = cidx + eidx
+
+            # Take pairs, select at most 1000 random.
+            pairs = list(combinations(whitelist, 2))
+            pairs = random.sample(pairs, min(skim, len(pairs)))
+
+            for i1, i2 in pairs:
+
+                c1 = doc.tokens[i1].clusters
+                c2 = doc.tokens[i2].clusters
+
+                # Connected if both have coref tag, or both empty.
+                coref = (bool(set.intersection(c1, c2)) or
+                    (not c1 and not c2))
+
+                x1.append(tokens[i1])
+                x2.append(tokens[i2])
+                y.append(1 if coref else -1)
+
+        x1 = torch.stack(x1)
+        x2 = torch.stack(x2)
+        y = torch.FloatTensor(y).type(ftype)
+
+        return x1, x2, y
 
 
 class Trainer:
@@ -340,62 +388,23 @@ class Trainer:
         for docs in tqdm(batches):
 
             try:
-                embeds, loss = self.train_batch(docs)
+                loss = self.train_batch(docs)
                 epoch_loss.append(loss)
             except Exception as e:
                 print(e, docs)
 
         print('Loss: %f' % np.mean(epoch_loss))
-        print(embeds[0][0])
 
     def train_batch(self, docs):
         """Embed docs, generate pairs.
         """
         self.optimizer.zero_grad()
 
-        tokens = [d.token_texts() for d in docs]
-
-        embeds = self.model(tokens)
-
-        # Get positive / negative examples.
-        x1, x2, y = [], [], []
-        for doc, tokens in zip(docs, embeds):
-
-            cidx, eidx = [], []
-            for i, t in enumerate(doc.tokens):
-                if t.clusters:
-                    cidx.append(i)
-                else:
-                    eidx.append(i)
-
-            if len(eidx) > len(cidx):
-                eidx = random.sample(eidx, len(cidx))
-
-            whitelist = cidx + eidx
-
-            pairs = list(combinations(whitelist, 2))
-            random.shuffle(pairs)
-
-            for i1, i2 in pairs[:1000]:
-
-                c1 = doc.tokens[i1].clusters
-                c2 = doc.tokens[i2].clusters
-
-                # Connected if both have coref tag, or both empty.
-                coref = (bool(set.intersection(c1, c2)) or
-                    (not c1 and not c2))
-
-                x1.append(tokens[i1])
-                x2.append(tokens[i2])
-                y.append(1 if coref else -1)
-
-        x1 = torch.stack(x1)
-        x2 = torch.stack(x2)
-        y = torch.FloatTensor(y).type(ftype)
+        x1, x2, y = self.model.embed_training_pairs(docs)
 
         loss = F.cosine_embedding_loss(x1, x2, y)
         loss.backward()
 
         self.optimizer.step()
 
-        return embeds, loss.item()
+        return loss.item()
