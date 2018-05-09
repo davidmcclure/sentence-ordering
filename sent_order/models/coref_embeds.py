@@ -280,7 +280,7 @@ class DocEmbedder(nn.Module):
         self.dropout = nn.Dropout()
 
         self.embed = nn.Sequential(
-            nn.Linear(lstm_dim*2, hidden_dim),
+            nn.Linear(lstm_dim*2+1, hidden_dim),
             nn.Tanh(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.Tanh(),
@@ -304,6 +304,10 @@ class DocEmbedder(nn.Module):
 
         x, _ = self.lstm(x)
         x = self.dropout(x)
+
+        pos = torch.range(0, x.shape[1]-1)
+        pos = pos.expand(x.shape[0], x.shape[1]).unsqueeze(2)
+        x = torch.cat([x, pos], dim=2)
 
         return self.embed(x)
 
