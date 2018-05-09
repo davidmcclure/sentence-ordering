@@ -334,6 +334,9 @@ class DistanceEmbedding(nn.Embedding):
         for i, func in enumerate(self.bins):
             if func(d): return i
 
+    # def dtoe(self, d):
+    #     return self(torch.LongTensor([self.dtoi(d)])).squeeze()
+
 
 class DocEncoder(nn.Module):
 
@@ -542,12 +545,9 @@ class PairScorer(Scorer):
         if not pairs:
             raise RuntimeError('No candidate pairs after pruning.')
 
-        # Get pairwise `sa` scores. (Batch to avoid OOMs.)
-        scores = []
-        for batch in chunked(pairs, 100000):
-            scores.append(torch.stack(batch).view(-1))
-
-        scores = torch.cat(scores)
+         # Get pairwise `sa` scores.
+         # TODO: Batch for big eval inputs?
+        scores = self.score(torch.stack(pairs)).view(-1)
 
         # Get indexes to re-group scores by i.
         sa_idx = regroup_indexes(spans, lambda s: len(s.yi))
