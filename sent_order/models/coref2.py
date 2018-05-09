@@ -16,6 +16,7 @@ from tqdm import tqdm
 from cached_property import cached_property
 from glob import glob
 from jinja2 import Environment, PackageLoader
+from subprocess import Popen, PIPE
 
 import torch
 from torchtext.vocab import Vectors
@@ -315,7 +316,7 @@ class DistanceEmbedding(nn.Embedding):
 
     def __init__(self, embed_dim=20):
         self.bins = (1, 2, 3, 4, 8, 16, 32, 64)
-        return super().__init__(len(self.bins), embed_dim)
+        return super().__init__(len(self.bins)+1, embed_dim)
 
     def dtoi(self, d):
         return sum([True for i in self.bins if d >= i])
@@ -630,7 +631,13 @@ class Coref(nn.Module):
 
 class Trainer:
 
-    def __init__(self, train_path, dev_path, lr=1e-3):
+    def __init__(self, train_path, dev_path, eval_script, pred_dir,
+        checkpoint_dir, lr=1e-3):
+
+        self.eval_script = eval_script
+        self.pred_dir = pred_dir
+        self.checkpoint_dir = checkpoint_dir
+        self.dev_path = dev_path
 
         self.train_corpus = Corpus.from_combined_file(train_path)
         self.dev_corpus = Corpus.from_combined_file(dev_path)
@@ -648,23 +655,25 @@ class Trainer:
         for epoch in range(epochs):
             self.train_epoch(epoch, *args, **kwargs)
 
-    def train_epoch(self, epoch, batch_size=100):
+    def train_epoch(self, epoch, batch_size=100, eval_every=10):
         """Train a single epoch.
         """
         print(f'\nEpoch {epoch}')
 
         self.model.train()
 
-        docs = random.sample(self.train_corpus.documents, batch_size)
-
         epoch_loss = []
-        for doc in tqdm(docs):
+        for i, doc in enumerate(tqdm(self.train_corpus.documents)):
 
             # Handle errors when model over-prunes.
             try:
                 epoch_loss.append(self.train_doc(doc))
             except RuntimeError as e:
                 print(e)
+
+            if i > 0 and i % eval_every == 0:
+                self.checkpoint(epoch)
+                print(self.eval_dev(epoch))
 
         print('Loss: %f' % np.mean(epoch_loss))
 
@@ -701,3 +710,21 @@ class Trainer:
         self.optimizer.step()
 
         return loss.item()
+
+    def eval_dev(self, epoch, lines=11):
+        """Dump dev predictions, eval.
+        """
+        path = os.path.join(self.pred_dir, f'dev.{epoch}.conll')
+
+        self.model.dump_conll_preds(self.dev_corpus.documents, path)
+
+        p = Popen([self.eval_script, 'all', self.dev_path, path], stdout=PIPE)
+        output, err = p.communicate()
+
+        return '\n'.join(output.decode().splitlines()[-lines:])
+
+    def checkpoint(self, epoch):
+        """Save model.
+        """
+        path = os.path.join(self.checkpoint_dir, f'coref.{epoch}.bin')
+        torch.save(self.model, path)
