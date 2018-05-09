@@ -321,13 +321,13 @@ class DocEmbedder(nn.Module):
         pos = pos.expand(x.shape[0], x.shape[1]).unsqueeze(2)
         x = torch.cat([x, pos], dim=2)
 
-        pairs = []
-        for d in x:
-            for t1 in d:
-                for t2 in d:
-                    pairs.append(torch.cat([t1, t2]))
+        # Attend over other hiddens.
 
-        pairs = torch.stack(pairs)
+        pairs = torch.stack([
+            torch.cat([t1, t2])
+            for d in x for t1 in d for t2 in d
+        ])
+
         scores = self.attend(pairs)
         scores = scores.view(x.shape[0], x.shape[1], -1)
         w = F.softmax(scores, 2)
@@ -359,10 +359,6 @@ class DocEmbedder(nn.Module):
                     cidx.append(i)
                 else:
                     eidx.append(i)
-
-            # Skip if no coref clusters.
-            if not cidx:
-                continue
 
             # Clamp empty indexes to size of coref indexes.
             if len(eidx) > len(cidx):
@@ -437,21 +433,21 @@ class Trainer:
         epoch_loss = []
         for docs in tqdm(batches):
 
-            try:
+            # try:
 
-                self.optimizer.zero_grad()
+            self.optimizer.zero_grad()
 
-                x1, x2, y = self.model.embed_training_pairs(docs)
+            x1, x2, y = self.model.embed_training_pairs(docs)
 
-                loss = F.cosine_embedding_loss(x1, x2, y)
-                loss.backward()
+            loss = F.cosine_embedding_loss(x1, x2, y)
+            loss.backward()
 
-                self.optimizer.step()
+            self.optimizer.step()
 
-                epoch_loss.append(loss.item())
+            epoch_loss.append(loss.item())
 
-            except RuntimeError as e:
-                print(e)
+            # except RuntimeError as e:
+            #     print(e)
 
         print('Loss: %f' % np.mean(epoch_loss))
         print('Dev loss: %f' % self.dev_loss())
