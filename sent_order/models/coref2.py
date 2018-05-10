@@ -23,7 +23,9 @@ from torchtext.vocab import Vectors
 from torch import nn, optim
 from torch.nn import functional as F
 
-from ..cuda import itype, ftype
+
+itype = torch.LongTensor
+ftype = torch.FloatTensor
 
 
 jinja_env = Environment(loader=PackageLoader('sent_order', 'templates'))
