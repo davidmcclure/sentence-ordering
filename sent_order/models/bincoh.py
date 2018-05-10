@@ -121,7 +121,6 @@ class Trainer:
         self.model.train()
 
         pairs = self.train_corpus.sent_pairs()
-
         batches = chunked(pairs, self.batch_size)
 
         epoch_loss = []
@@ -139,3 +138,25 @@ class Trainer:
             epoch_loss.append(loss.item())
 
         print('Loss: %f' % np.mean(epoch_loss))
+        print('Dev accuracy: %f' % self.dev_accuracy())
+
+    def dev_accuracy(self):
+        """Predict dev pairs.
+        """
+        self.model.eval()
+
+        pairs = self.dev_corpus.sent_pairs()
+        batches = chunked(pairs, self.batch_size)
+
+        correct, total = 0, 0
+        for batch in tqdm(batches):
+
+            yps, yts = self.model.train_batch(batch)
+
+            for yp, yt in zip(yps, yts):
+                if yp.argmax() == yt:
+                    correct += 1
+
+            total += len(yps)
+
+        return correct / total
