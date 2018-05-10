@@ -9,6 +9,7 @@ from boltons.iterutils import chunked
 import torch
 from torch.nn import functional as F
 from torch import nn, optim
+from torch.nn.utils.rnn import pad_packed_sequence
 
 from ..cuda import CUDA, itype
 from ..embeds import WordEmbedding
@@ -39,7 +40,7 @@ class Classifier(nn.Module):
         return self(x), y
 
 
-class RawTokenLSTM(Classifier):
+class TokenLSTM(Classifier):
 
     def __init__(self, vocab, lstm_dim=500, hidden_dim=200):
 
@@ -88,9 +89,77 @@ class RawTokenLSTM(Classifier):
         return self.predict(x)
 
 
+class TokenLSTMAttn(Classifier):
+
+    def __init__(self, vocab, lstm_dim=500, hidden_dim=200):
+
+        super().__init__()
+
+        self.embeddings = WordEmbedding(vocab)
+
+        self.lstm = nn.LSTM(
+            self.embeddings.weight.shape[1],
+            lstm_dim,
+            bidirectional=True,
+            batch_first=True,
+        )
+
+        self.dropout = nn.Dropout()
+
+        self.attn = nn.Sequential(
+            nn.Linear(lstm_dim*2, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1),
+        )
+
+        self.predict = nn.Sequential(
+            nn.Linear(lstm_dim*4, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 2),
+            nn.LogSoftmax(1),
+        )
+
+    def forward(self, pairs):
+        """Encode document tokens, predict.
+        """
+        x, sizes = utils.pad_right_and_stack([
+            self.embeddings.tokens_to_idx(s1 + s2)
+            for s1, s2 in pairs
+        ])
+
+        x = self.embeddings(x)
+        x = self.dropout(x)
+
+        x, reorder = utils.pack(x, sizes)
+
+        x, (hn, _) = self.lstm(x)
+        hn = self.dropout(hn)
+
+        # Cat forward + backward hidden layers.
+        hn = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
+        hn = hn[reorder]
+
+        # Unpack the raw LSTM states.
+        x, sizes = pad_packed_sequence(x, batch_first=True)
+        x = x[reorder]
+
+        weights = self.attn(x.view(-1, x.shape[-1])).squeeze()
+        weights = weights.view(x.shape[0], x.shape[1])
+        weights = F.softmax(weights, dim=1)
+        attn = (x * weights.unsqueeze(2)).sum(1)
+
+        x = torch.cat([hn, attn], dim=1)
+
+        return self.predict(x)
+
+
 class Trainer:
 
-    def __init__(self, train_path, dev_path, model_cls, lr=1e-3,
+    def __init__(self, model_cls, train_path, dev_path, lr=1e-3,
         batch_size=20, *args, **kwargs):
 
         self.batch_size = batch_size
