@@ -3,6 +3,7 @@
 import attr
 import re
 import random
+import os
 
 from collections import defaultdict
 from itertools import groupby
