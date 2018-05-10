@@ -332,6 +332,6 @@ class Trainer:
 
             total += len(yps)
 
-        print(yps.exp()[:10], yts.exp()[:10])
+        print(yps[:10], yts[:10])
 
         return correct / total
