@@ -322,8 +322,10 @@ class DistanceEmbedding(nn.Embedding):
         return sum([True for i in self.bins if d >= i])
 
     def forward(self, ds):
-        ds = torch.cat([torch.LongTensor([self.dtoi(d)]) for d in ds])
-        return super().forward(ds)
+        """Map distances to indexes, embed.
+        """
+        idx = torch.LongTensor([self.dtoi(d) for d in ds]).type(itype)
+        return super().forward(idx)
 
 
 class DocEncoder(nn.Module):
@@ -655,7 +657,7 @@ class Trainer:
         for epoch in range(epochs):
             self.train_epoch(epoch, *args, **kwargs)
 
-    def train_epoch(self, epoch, batch_size=100, eval_every=10):
+    def train_epoch(self, epoch, batch_size=100, eval_every=100):
         """Train a single epoch.
         """
         print(f'\nEpoch {epoch}')
