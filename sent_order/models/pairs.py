@@ -89,6 +89,52 @@ class TokenLSTM(Classifier):
         return self.predict(x)
 
 
+class TokenLSTMNoPacking(Classifier):
+
+    def __init__(self, vocab, lstm_dim=500, hidden_dim=200):
+
+        super().__init__()
+
+        self.embeddings = WordEmbedding(vocab)
+
+        self.lstm = nn.LSTM(
+            self.embeddings.weight.shape[1],
+            lstm_dim,
+            bidirectional=True,
+            batch_first=True,
+        )
+
+        self.dropout = nn.Dropout()
+
+        self.predict = nn.Sequential(
+            nn.Linear(lstm_dim*2, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 2),
+            nn.LogSoftmax(1),
+        )
+
+    def forward(self, pairs):
+        """Encode document tokens, predict.
+        """
+        x, sizes = utils.pad_right_and_stack([
+            self.embeddings.tokens_to_idx(s1 + s2)
+            for s1, s2 in pairs
+        ])
+
+        x = self.embeddings(x)
+        x = self.dropout(x)
+
+        _, (hn, _) = self.lstm(x)
+        hn = self.dropout(hn)
+
+        # Cat forward + backward hidden layers.
+        x = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
+
+        return self.predict(x)
+
+
 class TokenLSTMAttn(Classifier):
 
     def __init__(self, vocab, lstm_dim=500, hidden_dim=200):
