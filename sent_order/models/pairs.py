@@ -43,12 +43,12 @@ class Classifier(nn.Module):
             nn.LogSoftmax(1),
         )
 
-    def forward(self, docs):
+    def forward(self, pairs):
         """Encode document tokens, predict.
         """
         x, sizes = utils.pad_right_and_stack([
-            self.embeddings.tokens_to_idx(tokens)
-            for tokens in docs
+            self.embeddings.tokens_to_idx(s1 + s2)
+            for s1, s2 in pairs
         ])
 
         x = self.embeddings(x)
@@ -74,11 +74,11 @@ class Classifier(nn.Module):
         for s1, s2 in pairs:
 
             # Correct.
-            x.append(s1 + s2)
+            x.append((s1, s2))
             y.append(0)
 
             # Reversed.
-            x.append(s2 + s1)
+            x.append((s2, s1))
             y.append(1)
 
         y = torch.LongTensor(y).type(itype)
