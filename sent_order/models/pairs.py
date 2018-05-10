@@ -157,6 +157,62 @@ class TokenLSTMAttn(Classifier):
         return self.predict(x)
 
 
+class SentenceLSTM(Classifier):
+
+    def __init__(self, vocab, lstm_dim=500, hidden_dim=200):
+
+        super().__init__()
+
+        self.embeddings = WordEmbedding(vocab)
+
+        self.lstm = nn.LSTM(
+            self.embeddings.weight.shape[1],
+            lstm_dim,
+            bidirectional=True,
+            batch_first=True,
+        )
+
+        self.dropout = nn.Dropout()
+
+        self.predict = nn.Sequential(
+            nn.Linear(lstm_dim*4, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 2),
+            nn.LogSoftmax(1),
+        )
+
+    def forward(self, pairs):
+        """Encode sentences separately, cat, predict.
+        """
+        sents = [sent for pair in pairs for sent in pair]
+
+        x, sizes = utils.pad_right_and_stack([
+            self.embeddings.tokens_to_idx(tokens)
+            for tokens in sents
+        ])
+
+        x = self.embeddings(x)
+        x = self.dropout(x)
+
+        x, reorder = utils.pack(x, sizes)
+
+        _, (hn, _) = self.lstm(x)
+        hn = self.dropout(hn)
+
+        # Cat forward + backward hidden layers.
+        x = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
+        x = x[reorder]
+
+        x = torch.stack([
+            torch.cat([x[i1], x[i2]])
+            for i1, i2 in chunked(range(len(x)), 2)
+        ])
+
+        return self.predict(x)
+
+
 class Trainer:
 
     def __init__(self, model_cls, train_path, dev_path, lr=1e-3,
@@ -184,7 +240,7 @@ class Trainer:
         for epoch in range(epochs):
             self.train_epoch(epoch)
 
-    def train_epoch(self, epoch,):
+    def train_epoch(self, epoch):
         """Train a single epoch.
         """
         print(f'\nEpoch {epoch}')
