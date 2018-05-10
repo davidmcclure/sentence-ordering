@@ -23,7 +23,33 @@ class Classifier(nn.Module):
 
         self.dropout = nn.Dropout()
 
-    def forward(self, tokens):
-        """BiLSTM over document tokens.
+        self.predict = nn.Sequential(
+            nn.Linear(lstm_dim*4, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 2),
+            nn.LogSoftmax(1),
+        )
+
+    def forward(self, docs):
+        """Encode document tokens, predict.
         """
-        pass
+        x, sizes = pad_right_and_stack([
+            self.embeddings.tokens_to_idx(tokens)
+            for tokens in docs
+        ])
+
+        x = self.embeddings(x)
+        x = self.dropout(x)
+
+        x, reorder = pack(x, sizes)
+
+        _, (hn, _) = self.lstm(x)
+        hn = self.dropout(hn)
+
+        # Cat forward + backward hidden layers.
+        x = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
+        x = x[reorder]
+
+        return self.predict(x)
