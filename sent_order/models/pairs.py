@@ -266,8 +266,8 @@ class Trainer:
 
         self.batch_size = batch_size
 
-        self.train_corpus = Corpus.from_combined_file(train_path)
-        self.dev_corpus = Corpus.from_combined_file(dev_path)
+        self.train_corpus = Corpus.from_files(train_path)
+        self.dev_corpus = Corpus.from_files(dev_path)
 
         vocab = set.union(
             self.train_corpus.vocab(),
