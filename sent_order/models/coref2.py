@@ -673,11 +673,10 @@ class Trainer:
             except RuntimeError as e:
                 print(e)
 
-            if i > 0 and i % eval_every == 0:
-                self.checkpoint(epoch)
-                print(self.eval_dev(epoch))
-
         print('Loss: %f' % np.mean(epoch_loss))
+
+        self.checkpoint(epoch)
+        print(self.eval_dev(epoch))
 
     def train_doc(self, doc):
         """Train a single doc.
@@ -701,6 +700,7 @@ class Trainer:
 
             losses.append(p.log())
 
+            # Print correct predictions.
             yp = pred.argmax().item()
             if yp != len(pred)-1 and yp in yt:
                 print(span, span.yi[yp])
