@@ -10,6 +10,7 @@ from boltons.iterutils import pairwise, chunked
 from glob import glob
 from cached_property import cached_property
 from tqdm import tqdm
+from textblob import TextBlob
 
 from . import utils
 
@@ -24,6 +25,24 @@ class Token:
 
 
 class Document:
+
+    @classmethod
+    def from_text(cls, doc_slug, doc_part, text):
+        """Tokenize raw text input.
+        """
+        tokens = []
+        for i, sent in enumerate(TextBlob(text).sentences):
+            for token in sent.tokens:
+
+                tokens.append(Token(
+                    doc_slug=doc_slug,
+                    doc_part=doc_part,
+                    text=str(token),
+                    sent_index=i,
+                    clusters=set(),
+                ))
+
+        return cls(tokens)
 
     # TODO: Test the cluster parsing.
     # v4/data/train/data/english/annotations/bn/pri/01/pri_0103.v4_gold_conll
@@ -231,9 +250,3 @@ class Corpus:
         for doc in self.documents:
             for s1, s2 in pairwise(doc.sents()):
                 yield [t.text for t in s1], [t.text for t in s2]
-
-    def sent_pair_docs(self):
-        """Generate sentence pairs, wrapped as documents.
-        """
-        for tokens1, tokens2 in self.sent_pair_tokens():
-            yield Document(tokens1 + tokens2)
