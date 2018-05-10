@@ -3,7 +3,6 @@
 import attr
 import re
 import numpy as np
-import string
 import os
 
 from collections import defaultdict
@@ -11,7 +10,6 @@ from cached_property import cached_property
 from tqdm import tqdm
 from boltons.iterutils import pairwise, chunked
 from itertools import islice
-from functools import reduce
 from glob import glob
 
 import torch
@@ -34,7 +32,7 @@ def pad_right_and_stack(xs, pad_size=None):
     """Pad and stack a list of variable-length seqs.
 
     Args:
-        xs (list[Variable])
+        xs (list[Tensor])
         pad_size (int)
 
     Returns: stacked xs, sizes
@@ -46,17 +44,7 @@ def pad_right_and_stack(xs, pad_size=None):
     padded, sizes = [], []
     for x in xs:
 
-        # Ensure length > 0.
-        if len(x) == 0:
-            x = x.new(1).zero_()
-
-        if x.dim() == 1:
-            padding = (0, pad_size-len(x))
-
-        elif x.dim() == 2:
-            padding = (0, 0, 0, pad_size-len(x))
-
-        px = F.pad(x, padding)
+        px = F.pad(x, (0, pad_size-len(x)))
         padded.append(px)
 
         size = min(pad_size, len(x))
@@ -212,57 +200,7 @@ class Corpus:
         return chunked(self.pairs(), size)
 
 
-class CharEmbedding(nn.Embedding):
-
-    def __init__(self, embed_dim=8):
-        """Set vocab, map s->i.
-        """
-        self.vocab = string.ascii_letters + string.digits + string.punctuation
-        self._stoi = {s: i for i, s in enumerate(self.vocab)}
-
-        super().__init__(len(self.vocab)+2, embed_dim)
-
-    def stoi(self, s):
-        """Map char -> embedding index.
-        """
-        idx = self._stoi.get(s)
-        return idx + 2 if idx is not None else 1
-
-    def chars_to_idx(self, chars):
-        """Given a list of tokens, map to embedding indexes.
-        """
-        return torch.LongTensor([self.stoi(t) for t in chars]).type(itype)
-
-
-class CharCNN(nn.Module):
-
-    def __init__(self):
-
-        super().__init__()
-
-        self.embeddings = CharEmbedding()
-
-        self.convs = nn.ModuleList([
-            nn.Conv2d(1, 50, (n, self.embeddings.weight.shape[1]))
-            for n in (3, 4, 5)
-        ])
-
-    def forward(self, tokens):
-
-        x = [self.embeddings.chars_to_idx(list(token)) for token in tokens]
-        x, _ = pad_right_and_stack(x, 5)
-
-        x = self.embeddings(x)
-
-        x = x.unsqueeze(1)
-        x = [F.relu(conv(x)).squeeze(3) for conv in self.convs]
-        x = [F.max_pool1d(c, c.size(2)).squeeze(2) for c in x]
-        x = torch.cat(x, 1)
-
-        return x
-
-
-class WordEmbedding(nn.Embedding):
+class Embedding(nn.Embedding):
 
     def __init__(self, vocab, path='glove.840B.300d.txt'):
         """Set vocab, map s->i.
@@ -290,8 +228,6 @@ class WordEmbedding(nn.Embedding):
         # Copy in pretrained weights.
         self.weight.data.copy_(weights)
 
-        self.char_cnn = CharCNN()
-
     def __contains__(self, token):
         """Check if word is in vocab.
         """
@@ -308,28 +244,6 @@ class WordEmbedding(nn.Embedding):
         """
         return torch.LongTensor([self.stoi(t) for t in tokens]).type(itype)
 
-    def char_cnn_embed(self, docs):
-        """Word + char embeddings.
-        """
-        # Flatten tokens.
-        tokens = [t for doc in docs for t in doc]
-
-        # Char CNN over words.
-        char_embeds = self.char_cnn(tokens)
-
-        # Look up word embeddings.
-        x = self.tokens_to_idx(tokens).unsqueeze(0)
-        x = self(x).squeeze()
-
-        # Cat with char embeddings.
-        x = torch.cat([x, char_embeds], dim=1)
-
-        # Repack docs.
-        idxs = reduce(lambda x, y: (*x, x[-1]+len(y)), docs, (0,))
-        x = [x[i1:i2] for i1, i2 in pairwise(idxs)]
-
-        return x
-
 
 class Classifier(nn.Module):
 
@@ -337,11 +251,10 @@ class Classifier(nn.Module):
 
         super().__init__()
 
-        self.embeddings = WordEmbedding(vocab)
+        self.embeddings = Embedding(vocab)
 
         self.lstm = nn.LSTM(
-            # TODO: Infer the char CNN dim?
-            self.embeddings.weight.shape[1] + 150,
+            self.embeddings.weight.shape[1],
             lstm_dim,
             bidirectional=True,
             batch_first=True,
@@ -349,26 +262,22 @@ class Classifier(nn.Module):
             dropout=0.3,
         )
 
-        self.dropout = nn.Dropout()
+        self.hidden = nn.Linear(lstm_dim*4, hidden_dim)
+        self.out = nn.Linear(hidden_dim, 2)
 
-        self.predict = nn.Sequential(
-            nn.Linear(lstm_dim*4, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 2),
-            nn.LogSoftmax(1),
-        )
+        self.dropout = nn.Dropout()
 
     def forward(self, pairs):
         """Given sentence pair as a single stream of tokens, predict whether
         the sentences are in order.
         """
-        docs = [doc for pair in pairs for doc in pair]
+        x, sizes = pad_right_and_stack([
+            self.embeddings.tokens_to_idx(tokens)
+            for pair in pairs
+            for tokens in pair
+        ])
 
-        x = self.embeddings.char_cnn_embed(docs)
-
-        x, sizes = pad_right_and_stack(x)
+        x = self.embeddings(x)
         x = self.dropout(x)
 
         x, reorder = pack(x, sizes)
@@ -385,8 +294,10 @@ class Classifier(nn.Module):
             for i1, i2 in chunked(range(len(x)), 2)
         ])
 
-        return self.predict(x)
+        x = F.relu(self.hidden(x))
+        x = F.log_softmax(self.out(x), dim=1)
 
+        return x
 
     def train_batch(self, batch):
         """Generate correct / flipped pairs, predict.
