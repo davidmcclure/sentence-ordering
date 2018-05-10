@@ -624,8 +624,8 @@ class Trainer:
 
         self.optimizer = optim.Adam(params, lr=lr)
 
-        if torch.cuda.is_available():
-            self.model.cuda()
+        # if torch.cuda.is_available():
+        #     self.model.cuda()
 
     def train(self, epochs=10, *args, **kwargs):
         for epoch in range(epochs):
