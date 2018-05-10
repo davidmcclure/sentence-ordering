@@ -1,33 +1,35 @@
 
 
-import torch
 import os
-import ujson
 import attr
-import random
 import re
-import glob
+import random
 
 import numpy as np
+import networkx as nx
 
-from torchtext.vocab import Vectors
-from torch import nn, optim
-from torch.autograd import Variable
-from torch.nn.utils.rnn import pack_padded_sequence
-from torch.nn import functional as F
-
-from datetime import datetime as dt
-from collections import UserList
+from collections import defaultdict
+from itertools import islice, groupby
+from functools import reduce
+from boltons.iterutils import pairwise, chunked, windowed
+from tqdm import tqdm
 from cached_property import cached_property
 from glob import glob
-from boltons.iterutils import chunked_iter, windowed_iter
-from collections import defaultdict
-from tqdm import tqdm
-from itertools import islice
-from scipy import stats
+from jinja2 import Environment, PackageLoader
+from subprocess import Popen, PIPE
 
-from sent_order.cuda import itype, ftype
-from sent_order.utils import scan_paths
+import torch
+from torchtext.vocab import Vectors
+from torch import nn, optim
+from torch.nn import functional as F
+
+
+itype = torch.LongTensor
+ftype = torch.FloatTensor
+
+
+jinja_env = Environment(loader=PackageLoader('sent_order', 'templates'))
+conll_tpl = jinja_env.get_template('conll.txt')
 
 
 def parse_int(text):
@@ -37,61 +39,80 @@ def parse_int(text):
     return int(matches[0]) if matches else None
 
 
-class LazyVectors:
-
-    unk_idx = 1
-
-    def __init__(self, name='glove.840B.300d.txt'):
-        self.name = name
-
-    @cached_property
-    def loader(self):
-        return Vectors(self.name)
-
-    def set_vocab(self, vocab):
-        """Set corpus vocab.
-        """
-        # Intersect with model vocab.
-        self.vocab = [v for v in vocab if v in self.loader.stoi]
-
-        # Map string -> intersected index.
-        self._stoi = {s: i for i, s in enumerate(self.vocab)}
-
-    def weights(self):
-        """Build weights tensor for embedding layer.
-        """
-        # Select vectors for vocab words.
-        weights = torch.stack([
-            self.loader.vectors[self.loader.stoi[s]]
-            for s in self.vocab
-        ])
-
-        # Padding + UNK zeros rows.
-        return torch.cat([
-            torch.zeros((2, self.loader.dim)),
-            weights,
-        ])
-
-    def stoi(self, s):
-        """Map string -> embedding index.
-        """
-        idx = self._stoi.get(s)
-        return idx + 2 if idx else self.unk_idx
+def remove_consec_dupes(seq):
+    """Remove consecutive duplicates in a list.
+    [1,1,2,2,3,3] -> [1,2,3]
+    """
+    return [x[0] for x in groupby(seq)]
 
 
-VECTORS = LazyVectors()
+# TODO: Test.
+def regroup_indexes(seq, size_fn):
+    """Given a sequence A that contains items of variable size, provide a list
+    of indexes that, when iterated as pairs, will slice a flat sequence B into
+    groups with sizes that correspond to the items in A.
+
+    Args:
+        seq (iterable)
+        size_fn (func): Provides size of an individual item in `seq`.
+
+    Returns: list<int>
+    """
+    return reduce(lambda ix, i: (*ix, ix[-1] + size_fn(i)), seq, (0,))
 
 
 @attr.s
 class Token:
-
+    doc_slug = attr.ib()
+    doc_part = attr.ib()
     text = attr.ib()
-    document_id = attr.ib()
-    sent_offset = attr.ib()
-    coref_id = attr.ib()
+    sent_index = attr.ib()
+    clusters = attr.ib()
 
 
 class Document:
+
+    # TODO: Test the cluster parsing.
+    # v4/data/train/data/english/annotations/bn/pri/01/pri_0103.v4_gold_conll
+    @classmethod
+    def from_lines(cls, lines):
+        """Parse tokens.
+        """
+        tokens = []
+
+        open_clusters = set()
+        for i, line in enumerate(lines):
+
+            clusters = open_clusters.copy()
+
+            parts = [p for p in line[-1].split('|') if p != '-']
+
+            for part in parts:
+
+                cid = parse_int(part)
+
+                # Open: (5
+                if re.match('^\(\d+$', part):
+                    clusters.add(cid)
+                    open_clusters.add(cid)
+
+                # Close: 5)
+                elif re.match('^\d+\)$', part) and cid in open_clusters:
+                    open_clusters.remove(cid)
+
+                # Solo: (5)
+                elif re.match('^\((\d+)\)$', part):
+                    clusters.add(cid)
+
+            tokens.append(Token(
+                doc_slug=line[0],
+                doc_part=int(line[1]),
+                text=line[3],
+                sent_index=int(line[2]),
+                clusters=clusters,
+            ))
+
+        return cls(tokens)
 
     def __init__(self, tokens):
         self.tokens = tokens
@@ -102,50 +123,92 @@ class Document:
     def __len__(self):
         return len(self.tokens)
 
-    def token_index_tensor(self):
-        idx = [VECTORS.stoi(t.text) for t in self.tokens]
-        idx = torch.LongTensor(idx).type(itype)
-        return idx
+    def token_texts(self):
+        return [t.text for t in self.tokens]
 
     @cached_property
-    def coref_id_to_tokens(self):
+    def sent_start_indexes(self):
+        return [i for i, t in enumerate(self.tokens) if t.sent_index == 0]
+
+    def sents(self):
+        for i1, i2 in pairwise(self.sent_start_indexes + [len(self)]):
+            yield self.tokens[i1:i2]
+
+    def truncate_sents_random(self, max_sents=50):
+        """Randomly truncate sents up to N, return new instance.
+        """
+        sents = list(self.sents())
+
+        count = random.randint(1, min(len(sents), max_sents))
+        start = random.randint(0, len(sents)-count)
+
+        # Slice out random sentence window.
+        new_sents = sents[start:start+count]
+
+        # Flatten out tokens.
+        tokens = [t for sent in new_sents for t in sent]
+
+        return self.__class__(tokens)
+
+    @cached_property
+    def coref_id_to_index_range(self):
         """Map coref id -> token indexes, grouped by mention.
         """
-        id_to_idx = defaultdict(list)
+        id_idx = defaultdict(list)
 
         for i, token in enumerate(self.tokens):
+            for cid in token.clusters:
 
-            if not token.coref_id:
-                continue
+                spans = id_idx[cid]
 
-            spans = id_to_idx[token.coref_id]
+                if len(spans) and spans[-1][-1] == i-1:
+                    spans[-1].append(i)
 
-            if len(spans) and spans[-1][-1] == i-1:
-                spans[-1].append(i)
+                else:
+                    spans.append([i])
 
-            else:
-                spans.append([i])
-
-        return id_to_idx
+        return id_idx
 
     @cached_property
-    def coref_id_to_spans(self):
-        """Map coref id -> list of (start, end) token indexes.
+    def coref_id_to_i1i2(self):
+        """Map coref id -> (start, end) span indexes.
         """
         return {
             cid: [(s[0], s[-1]) for s in spans]
-            for cid, spans in self.coref_id_to_tokens.items()
+            for cid, spans in self.coref_id_to_index_range.items()
         }
 
     @cached_property
-    def span_to_antecedents(self):
+    def i1i2_to_ant_i1i2(self):
         """Map span (start, end) -> list of (start, end) of antecedents.
         """
         return {
             span: set(spans[:i+1])
-            for _, spans in self.coref_id_to_spans.items()
+            for _, spans in self.coref_id_to_i1i2.items()
             for i, span in enumerate(spans[1:])
         }
+
+    def to_conll_format(self, clusters):
+        """Generate CONLL output format.
+        """
+        tags = [[] for _ in range(len(self))]
+
+        for cid, cluster in enumerate(clusters):
+            for i1, i2 in cluster:
+
+                if i1 == i2:
+                    tags[i1].append(f'({cid})')
+
+                else:
+                    tags[i1].append(f'({cid}')
+                    tags[i2].append(f'{cid})')
+
+        tags = ['|'.join(t) if t else '-' for t in tags]
+
+        token_tag = zip(self.tokens, tags)
+
+        return conll_tpl.render(doc=self, token_tag=token_tag)
+
 
 class GoldFile:
 
@@ -161,52 +224,40 @@ class GoldFile:
                 if line and not line.startswith('#'):
                     yield line.split()
 
-    def tokens(self):
-        """Generate tokens.
+    def doc_id_lines(self):
+        """Group lines by document.
         """
-        open_tag = None
-        for line in self.lines():
-
-            digit = parse_int(line[-1])
-
-            if digit is not None and line[-1].startswith('('):
-                open_tag = digit
-
-            yield Token(
-                text=line[3],
-                document_id=int(line[1]),
-                sent_offset=int(line[2]),
-                coref_id=open_tag,
-            )
-
-            if line[-1].endswith(')'):
-                open_tag = None
+        return groupby(self.lines(), lambda line: (line[0], line[1]))
 
     def documents(self):
-        """Group tokens by document.
+        """Parse lines -> tokens, generate documents.
         """
-        groups = defaultdict(list)
-
-        for token in self.tokens():
-            groups[token.document_id].append(token)
-
-        for tokens in groups.values():
-            # TODO: Randomly truncate up to 50 sents.
-            yield Document(tokens[:500])
+        for _, lines in self.doc_id_lines():
+            yield Document.from_lines(lines)
 
 
 class Corpus:
 
     @classmethod
-    def from_files(cls, root):
-        """Load from globbed gold files.
+    def from_files(cls, root, skim=None):
+        """Load from gold files.
         """
+        pattern = os.path.join(root, '**/*gold_conll')
+
+        paths = glob(pattern, recursive=True)[:skim]
+
         docs = []
-        for path in tqdm(scan_paths(root, 'gold_conll$')):
-            gold = GoldFile(path)
-            docs += list(gold.documents())
+        for path in tqdm(paths):
+            docs += list(GoldFile(path).documents())
 
         return cls(docs)
+
+    @classmethod
+    def from_combined_file(cls, path):
+        """Load from merged gold files.
+        """
+        docs = GoldFile(path).documents()
+        return cls(list(docs))
 
     def __init__(self, documents):
         self.documents = documents
@@ -222,7 +273,102 @@ class Corpus:
         return vocab
 
 
-class FFNN(nn.Module):
+class WordEmbedding(nn.Embedding):
+
+    # TODO: Turian embeddings.
+    def __init__(self, vocab, path='glove.840B.300d.txt'):
+        """Set vocab, map s->i.
+        """
+        loader = Vectors(path)
+
+        # Map string -> intersected index.
+        self.vocab = [v for v in vocab if v in loader.stoi]
+        self._stoi = {s: i for i, s in enumerate(self.vocab)}
+
+        super().__init__(len(self.vocab)+2, loader.dim)
+
+        # Select vectors for vocab words.
+        weights = torch.stack([
+            loader.vectors[loader.stoi[s]]
+            for s in self.vocab
+        ])
+
+        # Padding + UNK zeros rows.
+        weights = torch.cat([
+            torch.zeros((2, loader.dim)),
+            weights,
+        ])
+
+        # Copy in pretrained weights.
+        self.weight.data.copy_(weights)
+
+    def stoi(self, s):
+        """Map string -> embedding index. <UNK> --> 1.
+        """
+        idx = self._stoi.get(s)
+        return idx + 2 if idx is not None else 1
+
+    def tokens_to_idx(self, tokens):
+        """Given a list of tokens, map to embedding indexes.
+        """
+        return torch.LongTensor([self.stoi(t) for t in tokens]).type(itype)
+
+
+class DistanceEmbedding(nn.Embedding):
+
+    def __init__(self, embed_dim=20):
+        self.bins = (1, 2, 3, 4, 8, 16, 32, 64)
+        return super().__init__(len(self.bins)+1, embed_dim)
+
+    def dtoi(self, d):
+        return sum([True for i in self.bins if d >= i])
+
+    def forward(self, ds):
+        """Map distances to indexes, embed.
+        """
+        idx = torch.LongTensor([self.dtoi(d) for d in ds]).type(itype)
+        return super().forward(idx)
+
+
+class DocEncoder(nn.Module):
+
+    def __init__(self, vocab, lstm_dim, lstm_num_layers=1):
+
+        super().__init__()
+
+        self.embeddings = WordEmbedding(vocab)
+
+        self.lstm = nn.LSTM(
+            self.embeddings.weight.shape[1],
+            lstm_dim,
+            bidirectional=True,
+            num_layers=lstm_num_layers,
+            batch_first=True,
+        )
+
+        self.dropout = nn.Dropout()
+
+    @property
+    def embed_dim(self):
+        return self.embeddings.weight.shape[1]
+
+    def forward(self, tokens):
+        """BiLSTM over document tokens.
+        """
+        # TODO: Char CNN.
+        x = self.embeddings.tokens_to_idx(tokens)
+        x = x.unsqueeze(0)
+
+        embeds = self.embeddings(x)
+        embeds = self.dropout(embeds)
+
+        states, _ = self.lstm(embeds)
+        states = self.dropout(states)
+
+        return embeds.squeeze(), states.squeeze()
+
+
+class Scorer(nn.Module):
 
     def __init__(self, input_dim, hidden_dim=150):
 
@@ -240,145 +386,267 @@ class FFNN(nn.Module):
         return self.score(x)
 
 
-class SpanAttention(FFNN):
+@attr.s(frozen=True, repr=False)
+class Span:
 
-    def forward(self, x):
-        return F.softmax(self.score(x).squeeze(), dim=0)
+    # Parent document reference.
+    doc = attr.ib()
+
+    # Left / right token indexes.
+    i1 = attr.ib()
+    i2 = attr.ib()
+
+    # Span embedding tensor.
+    g = attr.ib(default=None)
+
+    # Unary mention score, as tensor.
+    sm = attr.ib(default=None)
+
+    # List of candidate antecedent spans.
+    yi = attr.ib(default=None)
+
+    # Pairwise scores for each yi.
+    sij = attr.ib(default=None)
+
+    def __repr__(self):
+        text = ' '.join([t.text for t in self.tokens])
+        return 'Span<%d, %d, "%s">' % (self.i1, self.i2, text)
+
+    @cached_property
+    def tokens(self):
+        return self.doc.tokens[self.i1:self.i2+1]
+
+    @cached_property
+    def i1i2(self):
+        return (self.i1, self.i2)
+
+    def sij_gold_indexes(self):
+        """Get indexes of gold antecedents in the sij score tensor.
+        """
+        ant_i1i2s = self.doc.i1i2_to_ant_i1i2.get(self.i1i2, [])
+
+        sij_idx = [
+            i for i, span in enumerate(self.yi)
+            if span.i1i2 in ant_i1i2s
+        ]
+
+        if not sij_idx:
+            sij_idx = [len(self.sij)-1]
+
+        return sij_idx
+
+
+class SpanScorer(nn.Module):
+
+    def __init__(self, state_dim, width_dim, gi_dim):
+        super().__init__()
+        self.attention = Scorer(state_dim)
+        self.width_embeddings = DistanceEmbedding(width_dim)
+        self.sm = Scorer(gi_dim)
+
+    def forward(self, doc, embeds, states):
+        """Generate spans, attend over LSTM states, form encodings.
+        """
+        # Get raw attention scores over LSTM states.
+        attns = self.attention(states)
+
+        # Slice out spans, build encodings.
+        spans, gs = [], []
+        for n in range(1, 11):
+            for w in windowed(range(len(doc.tokens)), n):
+
+                i1, i2 = w[0], w[-1]
+
+                span_embeds = embeds[i1:i2+1]
+                span_states = states[i1:i2+1]
+                span_attns = attns[i1:i2+1]
+
+                # Softmax over attention scores for span.
+                attn = F.softmax(span_attns.squeeze(), dim=0)
+                attn = sum(span_embeds * attn.view(-1, 1))
+
+                # Left LSTM + right LSTM + attention + width.
+                g = torch.cat([span_states[0], span_states[-1], attn])
+
+                spans.append(Span(doc, i1, i2))
+                gs.append(g)
+
+        gs = torch.stack(gs)
+
+        # Cat on width embeddings.
+        widths = self.width_embeddings([s.i2-s.i1+1 for s in spans])
+        gs = torch.cat([gs, widths], dim=1)
+
+        # Unary scores for spans.
+        sms = self.sm(gs).squeeze()
+
+        # Set scores on spans.
+        # TODO: Scalar sm_sort, for perf?
+        spans = [
+            attr.evolve(span, g=g, sm=sm)
+            for span, g, sm in zip(spans, gs, sms)
+        ]
+
+        return spans
+
+
+def prune_spans(spans, T, lbda=0.4):
+    """Sort by score; remove overlaps, skim lamda*T; sort by start idx.
+    """
+    # Sory by unary score, descending.
+    spans = sorted(spans, key=lambda s: s.sm, reverse=True)
+
+    # Remove spans that overlap with higher-scoring spans.
+    taken_idxs = set()
+    pruned = []
+    for span in spans:
+
+        span_idxs = range(span.i1, span.i2+1)
+        slots = [idx in taken_idxs for idx in span_idxs]
+        slots = remove_consec_dupes(slots)
+
+        # Allow spans that overlap with nothing, or spans that are "supersets"
+        # of previously-accepted spans - start to left, end to right.
+        if len(slots) == 1 or slots == [False, True, False]:
+            pruned.append(span)
+            taken_idxs.update(span_idxs)
+
+    # Take top lambda*T.
+    pruned = pruned[:round(T*lbda)]
+
+    # Order by left doc index.
+    # TODO: Sort by i2 too?
+    pruned = sorted(pruned, key=lambda s: s.i1)
+
+    return pruned
+
+
+class PairScorer(nn.Module):
+
+    def __init__(self, dist_dim, gij_dim):
+        super().__init__()
+        self.dist_embeddings = DistanceEmbedding(dist_dim)
+        self.sa = Scorer(gij_dim)
+
+    def forward(self, spans):
+        """Map span -> candidate antecedents, score pairs.
+        """
+        # Take up to K antecedents.
+        spans = [
+            attr.evolve(span, yi=spans[max(0, ix-250):ix])
+            for ix, span in enumerate(spans)
+        ]
+
+        pairs, dists = [], []
+        for i in spans:
+            for j in i.yi:
+                pairs.append(torch.cat([i.g, j.g, i.g*j.g]))
+                dists.append(i.i1 - j.i1)
+
+        if not pairs:
+            raise RuntimeError('No candidate pairs after pruning.')
+
+        pairs = torch.stack(pairs)
+
+        # Cat on distance embeddings.
+        dists = self.dist_embeddings(dists)
+        pairs = torch.cat([pairs, dists], dim=1)
+
+        # Get pairwise `sa` scores.
+        # TODO: Batch for big eval inputs?
+        sas = self.sa(pairs).view(-1)
+
+        # Get indexes to re-group scores by i.
+        sa_idx = regroup_indexes(spans, lambda s: len(s.yi))
+
+        spans_sij = []
+        for span, (i1, i2) in zip(spans, pairwise(sa_idx)):
+
+            # Build composite `sij` scores.
+            sij = [
+                (span.sm + yi.sm + sa).view(1)
+                for yi, sa in zip(span.yi, sas[i1:i2])
+            ]
+
+            # Add epsilon score 0 as last element.
+            epsilon = torch.FloatTensor([0]).type(ftype)
+            sij = torch.cat([*sij, epsilon])
+
+            spans_sij.append(attr.evolve(span, sij=sij))
+
+        return spans_sij
 
 
 class Coref(nn.Module):
 
-    def __init__(self, input_dim, lstm_dim):
+    def __init__(self, vocab, lstm_dim=200, size_dim=20):
 
         super().__init__()
 
-        weights = VECTORS.weights()
+        self.encode_doc = DocEncoder(vocab, lstm_dim)
 
-        self.embeddings = nn.Embedding(
-            weights.shape[0],
-            weights.shape[1],
-        )
-
-        self.embeddings.weight.data.copy_(weights)
-        self.embeddings.weight.requires_grad = False
-
-        self.lstm = nn.LSTM(
-            input_dim,
-            lstm_dim,
-            bidirectional=True,
-            batch_first=True,
-        )
-
-        self.dropout = nn.Dropout()
-
+        # LSTM forward + back.
         state_dim = lstm_dim * 2
-        span_dim = state_dim * 2 + input_dim + 1
-        pair_dim = span_dim * 3
 
-        self.span_attention = SpanAttention(state_dim)
-        self.span_scorer = FFNN(span_dim)
-        self.pair_scorer = FFNN(pair_dim)
+        # Left + right LSTM states, head attention, width.
+        gi_dim = state_dim * 2 + self.encode_doc.embed_dim + size_dim
+
+        # i, j, i*j, dist
+        gij_dim = gi_dim * 3 + size_dim
+
+        self.score_spans = SpanScorer(state_dim, size_dim, gi_dim)
+        self.score_pairs = PairScorer(size_dim, gij_dim)
 
     def forward(self, doc):
-        """Pad, pack, encode, reorder.
-
-        Args:
-            batch (Batch)
+        """Generate spans with yi / sij.
         """
-        x = doc.token_index_tensor()
-        x = x.unsqueeze(0)
+        # LSTM over tokens.
+        embeds, states = self.encode_doc(doc.token_texts())
 
-        embeds = self.embeddings(x)
-        # TODO: Turian embeds.
-        # TODO: Char CNN.
+        spans = self.score_spans(doc, embeds, states)
+        spans = prune_spans(spans, len(doc))
 
-        x, _ = self.lstm(embeds)
-        x = self.dropout(x)
+        return self.score_pairs(spans)
 
-        # Generate and encode spans.
-        spans = []
-        for n in range(1, 11):
-            for w in windowed_iter(range(len(doc)), n):
+    def predict(self, doc):
+        """Given a doc, generate a set of grouped (i1,i2) mention clusters.
+        """
+        graph = nx.Graph()
+        for span in self(doc):
 
-                i1, i2 = w[0], w[-1]
-                tokens = embeds[0][i1:i2+1]
-                states = x[0][i1:i2+1]
+            max_idx = span.sij.argmax().item()
 
-                # Attend over raw word embeddings.
-                attn = self.span_attention(states).view(-1, 1)
-                attn = sum(tokens * attn)
+            if max_idx < len(span.sij)-1:
+                graph.add_edge(span.i1i2, span.yi[max_idx].i1i2)
 
-                # Include span size.
-                size = torch.FloatTensor([n]).type(ftype)
+        return list(nx.connected_components(graph))
 
-                g = torch.cat([states[0], states[-1], attn, size])
-                spans.append((i1, i2, g))
+    def dump_conll_preds(self, docs, path):
+        """Write CONLL prediction file.
+        """
+        outputs = []
+        for doc in tqdm(docs):
+            clusters = self.predict(doc)
+            outputs.append(doc.to_conll_format(clusters))
 
-        # Score spans.
-        g = torch.stack([s[2] for s in spans])
-        sm = self.span_scorer(g).squeeze()
-
-        # Sort spans by unary score.
-        span_sm = sorted(zip(spans, sm), key=lambda p: p[1], reverse=True)
-        spans = [(*span, sm) for span, sm in span_sm]
-
-        # Remove overlapping spans.
-        nonoverlapping = []
-        taken = set()
-        for s in spans:
-            indexes = range(s[0], s[1]+1)
-            takens = [i in taken for i in indexes]
-            if len(set(takens)) == 1 or (takens[0] == takens[-1] == False):
-                nonoverlapping.append(s)
-                taken.update(indexes)
-
-        # Take top lambda*T spans, keeping score.
-        spans = nonoverlapping[:round(len(doc)*0.4)]
-
-        # Sort spans by start index.
-        spans = sorted(spans, key=lambda s: s[0])
-
-        # Get pairwise `sa` scores in bulk.
-        x = []
-        for ix, i in enumerate(spans):
-            for j in spans[:ix]:
-                gi, gj = i[2], j[2]
-                # TODO: Distance / speaker / genre features.
-                x.append(torch.cat([gi, gj, gi*gj]))
-
-        x = torch.stack(x)
-        sa = self.pair_scorer(x).view(-1)
-
-        # Get combined `sij` scores.
-        c = 0
-        for ix, i in enumerate(spans):
-
-            # TODO: Just consider K antecedents.
-            j_sa = []
-            for j in spans[:ix]:
-                j_sa.append((j, sa[c]))
-                c += 1
-
-            # Antecedents + 0 for epsilon.
-            sij = [(i[-1] + j[-1] + sa).view(1) for j, sa in j_sa]
-            sij = torch.cat([*sij, torch.FloatTensor([0]).type(ftype)])
-
-            yield (
-                (i[0], i[1]), # i
-                [(j[0], j[1]) for j, _ in j_sa], # y(i)
-                sij, # Scores for each y(i)
-            )
+        with open(path, 'w') as fh:
+            print('\n'.join(outputs), file=fh)
 
 
 class Trainer:
 
-    def __init__(self, train_root, lr=1e-3):
+    def __init__(self, train_path, dev_path, eval_script, pred_dir,
+        checkpoint_dir, lr=1e-3):
 
-        self.train_corpus = Corpus.from_files(train_root)
+        self.eval_script = eval_script
+        self.pred_dir = pred_dir
+        self.checkpoint_dir = checkpoint_dir
+        self.dev_path = dev_path
 
-        VECTORS.set_vocab(self.train_corpus.vocab())
+        self.train_corpus = Corpus.from_combined_file(train_path)
+        self.dev_corpus = Corpus.from_combined_file(dev_path)
 
-        self.model = Coref(300, 200)
+        self.model = Coref(self.train_corpus.vocab())
 
         params = [p for p in self.model.parameters() if p.requires_grad]
 
@@ -387,56 +655,80 @@ class Trainer:
         if torch.cuda.is_available():
             self.model.cuda()
 
-    def train_epoch(self, epoch, batch_size=100):
+    def train(self, epochs=10, *args, **kwargs):
+        for epoch in range(epochs):
+            self.train_epoch(epoch, *args, **kwargs)
 
+    def train_epoch(self, epoch, batch_size=100, eval_every=100):
+        """Train a single epoch.
+        """
         print(f'\nEpoch {epoch}')
 
         self.model.train()
 
-        docs = random.sample(self.train_corpus.documents, batch_size)
+        epoch_loss = []
+        for i, doc in enumerate(tqdm(self.train_corpus.documents)):
 
-        epoch_loss, correct, total = 0, 0, 0
-        for doc in tqdm(docs):
+            # Handle errors when model over-prunes.
+            try:
+                epoch_loss.append(self.train_doc(doc))
+            except RuntimeError as e:
+                print(e)
 
-            self.optimizer.zero_grad()
+        print('Loss: %f' % np.mean(epoch_loss))
 
-            total += len(doc.span_to_antecedents)
+        self.checkpoint(epoch)
+        print(self.eval_dev(epoch))
 
-            losses = []
-            for i, yi, sij in self.model(doc):
+    def train_doc(self, doc):
+        """Train a single doc.
+        """
+        # Train on random sub-docs.
+        doc = doc.truncate_sents_random()
 
-                gold_span_idxs = doc.span_to_antecedents.get(i, [])
+        self.optimizer.zero_grad()
 
-                gold_pred_idxs = [
-                    j for j, span in enumerate(yi)
-                    if span in gold_span_idxs
-                ]
+        losses = []
+        for span in self.model(doc):
 
-                if not gold_pred_idxs:
-                    gold_pred_idxs = [len(sij)-1]
+            # Softmax over possible antecedents.
+            pred = F.softmax(span.sij, dim=0)
 
-                # Get distribution over possible antecedents.
-                pred = F.softmax(sij, dim=0)
+            # Get indexes of correct antecedents.
+            yt = span.sij_gold_indexes()
 
-                # Sum mass assigned to gold antecedents.
-                p = sum([pred[i] for i in gold_pred_idxs])
-                losses.append(p.log())
+            # Sum mass assigned to correct antecedents.
+            p = sum([pred[i] for i in yt])
 
-                for ix in gold_pred_idxs:
-                    if ix != len(pred)-1 and ix == pred.argmax().item():
-                        correct += 1
+            losses.append(p.log())
 
-            loss = sum(losses) / len(losses) * -1
-            loss.backward()
+            # Print correct predictions.
+            yp = pred.argmax().item()
+            if yp != len(pred)-1 and yp in yt:
+                print(span, span.yi[yp])
 
-            nn.utils.clip_grad_norm_(self.model.parameters(), 5)
-            self.optimizer.step()
+        loss = sum(losses) * -1
+        loss.backward()
 
-            epoch_loss += loss.item()
+        nn.utils.clip_grad_norm_(self.model.parameters(), 5)
+        self.optimizer.step()
 
-        print('Loss: %f' % epoch_loss)
-        if total: print('Correct: %f' % (correct/total))
+        return loss.item()
 
-    def train(self, epochs=10, *args, **kwargs):
-        for epoch in range(epochs):
-            self.train_epoch(epoch, *args, **kwargs)
+    def eval_dev(self, epoch, lines=11):
+        """Dump dev predictions, eval.
+        """
+        path = os.path.join(self.pred_dir, f'dev.{epoch}.conll')
+
+        self.model.dump_conll_preds(self.dev_corpus.documents, path)
+
+        p = Popen([self.eval_script, 'all', self.dev_path, path], stdout=PIPE)
+        output, err = p.communicate()
+
+        return '\n'.join(output.decode().splitlines()[-lines:])
+
+    def checkpoint(self, epoch):
+        """Save model.
+        """
+        path = os.path.join(self.checkpoint_dir, f'coref.{epoch}.bin')
+        torch.save(self.model, path)
