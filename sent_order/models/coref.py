@@ -10,7 +10,6 @@ import networkx as nx
 
 from collections import defaultdict
 from itertools import islice, groupby
-from functools import reduce
 from boltons.iterutils import pairwise, chunked, windowed
 from tqdm import tqdm
 from cached_property import cached_property
@@ -23,6 +22,8 @@ from torchtext.vocab import Vectors
 from torch import nn, optim
 from torch.nn import functional as F
 
+from .. import utils
+
 
 itype = torch.LongTensor
 ftype = torch.FloatTensor
@@ -30,35 +31,6 @@ ftype = torch.FloatTensor
 
 jinja_env = Environment(loader=PackageLoader('sent_order', 'templates'))
 conll_tpl = jinja_env.get_template('conll.txt')
-
-
-def parse_int(text):
-    """Parse an integer out of a string.
-    """
-    matches = re.findall('[0-9]+', text)
-    return int(matches[0]) if matches else None
-
-
-def remove_consec_dupes(seq):
-    """Remove consecutive duplicates in a list.
-    [1,1,2,2,3,3] -> [1,2,3]
-    """
-    return [x[0] for x in groupby(seq)]
-
-
-# TODO: Test.
-def regroup_indexes(seq, size_fn):
-    """Given a sequence A that contains items of variable size, provide a list
-    of indexes that, when iterated as pairs, will slice a flat sequence B into
-    groups with sizes that correspond to the items in A.
-
-    Args:
-        seq (iterable)
-        size_fn (func): Provides size of an individual item in `seq`.
-
-    Returns: list<int>
-    """
-    return reduce(lambda ix, i: (*ix, ix[-1] + size_fn(i)), seq, (0,))
 
 
 @attr.s
@@ -89,7 +61,7 @@ class Document:
 
             for part in parts:
 
-                cid = parse_int(part)
+                cid = utils.parse_int(part)
 
                 # Open: (5
                 if re.match('^\(\d+$', part):
@@ -503,7 +475,7 @@ def prune_spans(spans, T, lbda=0.4):
 
         span_idxs = range(span.i1, span.i2+1)
         slots = [idx in taken_idxs for idx in span_idxs]
-        slots = remove_consec_dupes(slots)
+        slots = utils.remove_consec_dupes(slots)
 
         # Allow spans that overlap with nothing, or spans that are "supersets"
         # of previously-accepted spans - start to left, end to right.
@@ -557,7 +529,7 @@ class PairScorer(nn.Module):
         sas = self.sa(pairs).view(-1)
 
         # Get indexes to re-group scores by i.
-        sa_idx = regroup_indexes(spans, lambda s: len(s.yi))
+        sa_idx = utils.regroup_indexes(spans, lambda s: len(s.yi))
 
         spans_sij = []
         for span, (i1, i2) in zip(spans, pairwise(sa_idx)):
