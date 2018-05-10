@@ -247,7 +247,7 @@ class Trainer:
 
         self.model.train()
 
-        pairs = self.train_corpus.sent_pairs()
+        pairs = self.train_corpus.sent_pair_tokens()
         batches = chunked(pairs, self.batch_size)
 
         epoch_loss = []
@@ -272,7 +272,7 @@ class Trainer:
         """
         self.model.eval()
 
-        pairs = self.dev_corpus.sent_pairs()
+        pairs = self.dev_corpus.sent_pair_tokens()
         batches = chunked(pairs, self.batch_size)
 
         correct, total = 0, 0

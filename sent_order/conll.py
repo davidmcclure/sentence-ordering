@@ -225,9 +225,15 @@ class Corpus:
 
         return vocab
 
-    def sent_pairs(self):
+    def sent_pair_tokens(self):
         """Generate sentence pairs.
         """
         for doc in self.documents:
             for s1, s2 in pairwise(doc.sents()):
                 yield [t.text for t in s1], [t.text for t in s2]
+
+    def sent_pair_docs(self):
+        """Generate sentence pairs, wrapped as documents.
+        """
+        for tokens1, tokens2 in self.sent_pair_tokens():
+            yield Document(tokens1 + tokens2)
