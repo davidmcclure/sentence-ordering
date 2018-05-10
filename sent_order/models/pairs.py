@@ -18,7 +18,7 @@ from .. import utils
 
 class Classifier(nn.Module):
 
-    def __init__(self, vocab, lstm_dim, hidden_dim, lstm_num_layers=1):
+    def __init__(self, vocab, lstm_dim=500, hidden_dim=200):
 
         super().__init__()
 
@@ -28,7 +28,6 @@ class Classifier(nn.Module):
             self.embeddings.weight.shape[1],
             lstm_dim,
             bidirectional=True,
-            num_layers=lstm_num_layers,
             batch_first=True,
         )
 
@@ -88,8 +87,8 @@ class Classifier(nn.Module):
 
 class Trainer:
 
-    def __init__(self, train_path, dev_path, lr=1e-3, lstm_dim=500,
-        hidden_dim=200, batch_size=20):
+    def __init__(self, train_path, dev_path, lr=1e-3, batch_size=20,
+        *args, **kwargs):
 
         self.batch_size = batch_size
 
@@ -100,7 +99,7 @@ class Trainer:
             self.train_corpus.vocab(),
             self.dev_corpus.vocab())
 
-        self.model = Classifier(vocab, lstm_dim, hidden_dim)
+        self.model = Classifier(vocab, *args, **kwargs)
 
         params = [p for p in self.model.parameters() if p.requires_grad]
 
