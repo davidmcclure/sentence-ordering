@@ -6,7 +6,7 @@ import random
 
 from collections import defaultdict
 from itertools import groupby
-from boltons.iterutils import pairwise
+from boltons.iterutils import pairwise, chunked
 from glob import glob
 from cached_property import cached_property
 from tqdm import tqdm
@@ -224,3 +224,16 @@ class Corpus:
             vocab.update([t.text for t in doc.tokens])
 
         return vocab
+
+    def training_batches(self, size, max_sents):
+        """Generate batches.
+        """
+        # Truncate randomly.
+        docs = [d.truncate_sents_random(max_sents) for d in self.documents]
+
+        # Sort by length, chunk.
+        docs = sorted(docs, key=lambda d: len(d))
+        batches = chunked(docs, size)
+
+        # Shuffle lengths.
+        return sorted(batches, key=lambda x: random.random())

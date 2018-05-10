@@ -1,9 +1,16 @@
 
 
+import numpy as np
 import re
+import torch
 
 from itertools import groupby
 from functools import reduce
+
+from torch.nn import functional as F
+from torch.nn.utils.rnn import pack_padded_sequence
+
+from .cuda import itype
 
 
 def parse_int(text):
@@ -58,7 +65,7 @@ def pad_right_and_stack(xs, pad_size=None):
     padded, sizes = [], []
     for x in xs:
 
-        px = F.pad(x, (0, pad_size-len(x))
+        px = F.pad(x, (0, pad_size-len(x)))
         padded.append(px)
 
         size = min(pad_size, len(x))
