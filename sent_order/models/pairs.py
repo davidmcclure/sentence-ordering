@@ -18,6 +18,29 @@ from .. import utils
 
 class Classifier(nn.Module):
 
+    def train_batch(self, pairs):
+        """Generate correct / reversed examples, predict.
+
+        Returns: y pred, y true
+        """
+        x, y = [], []
+        for s1, s2 in pairs:
+
+            # Correct.
+            x.append((s1, s2))
+            y.append(0)
+
+            # Reversed.
+            x.append((s2, s1))
+            y.append(1)
+
+        y = torch.LongTensor(y).type(itype)
+
+        return self(x), y
+
+
+class RawTokenLSTM(Classifier):
+
     def __init__(self, vocab, lstm_dim=500, hidden_dim=200):
 
         super().__init__()
@@ -64,31 +87,11 @@ class Classifier(nn.Module):
 
         return self.predict(x)
 
-    def train_batch(self, pairs):
-        """Generate correct / reversed examples, predict.
-
-        Returns: y pred, y true
-        """
-        x, y = [], []
-        for s1, s2 in pairs:
-
-            # Correct.
-            x.append((s1, s2))
-            y.append(0)
-
-            # Reversed.
-            x.append((s2, s1))
-            y.append(1)
-
-        y = torch.LongTensor(y).type(itype)
-
-        return self(x), y
-
 
 class Trainer:
 
-    def __init__(self, train_path, dev_path, lr=1e-3, batch_size=20,
-        *args, **kwargs):
+    def __init__(self, train_path, dev_path, model_cls, lr=1e-3,
+        batch_size=20, *args, **kwargs):
 
         self.batch_size = batch_size
 
@@ -99,7 +102,7 @@ class Trainer:
             self.train_corpus.vocab(),
             self.dev_corpus.vocab())
 
-        self.model = Classifier(vocab, *args, **kwargs)
+        self.model = model_cls(vocab, *args, **kwargs)
 
         params = [p for p in self.model.parameters() if p.requires_grad]
 
