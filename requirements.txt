@@ -25,3 +25,4 @@ torchtext
 scandir
 networkx
 Jinja2
+jenkspy
