@@ -262,15 +262,31 @@ class WordEmbedding(nn.Embedding):
 
 class DocEmbedder(nn.Module):
 
-    def __init__(self, vocab, lstm_dim=500, hidden_dim=200, embed_dim=50,
+    def __init__(self, vocab, lstm_dim=200, hidden_dim=200, embed_dim=50,
         lstm_num_layers=1):
 
         super().__init__()
 
         self.embeddings = WordEmbedding(vocab)
 
-        self.lstm = nn.LSTM(
+        self.lstm1 = nn.LSTM(
             self.embeddings.weight.shape[1],
+            lstm_dim,
+            bidirectional=True,
+            num_layers=lstm_num_layers,
+            batch_first=True,
+        )
+
+        self.lstm2 = nn.LSTM(
+            lstm_dim*2,
+            lstm_dim,
+            bidirectional=True,
+            num_layers=lstm_num_layers,
+            batch_first=True,
+        )
+
+        self.lstm3 = nn.LSTM(
+            lstm_dim*2,
             lstm_dim,
             bidirectional=True,
             num_layers=lstm_num_layers,
@@ -279,14 +295,8 @@ class DocEmbedder(nn.Module):
 
         self.dropout = nn.Dropout()
 
-        self.attend = nn.Sequential(
-            nn.Linear((lstm_dim*2+1)*2, hidden_dim),
-            nn.Tanh(),
-            nn.Linear(hidden_dim, 1),
-        )
-
         self.embed = nn.Sequential(
-            nn.Linear((lstm_dim*2+1)*2, hidden_dim),
+            nn.Linear(lstm_dim*2*3+1, hidden_dim),
             nn.Tanh(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.Tanh(),
@@ -308,46 +318,21 @@ class DocEmbedder(nn.Module):
         x = self.embeddings(x)
         x = self.dropout(x)
 
-        x, (hn, _) = self.lstm(x)
-        x = self.dropout(x)
+        x1, hn1 = self.lstm1(x)
+        x1 = self.dropout(x1)
 
-        # # LSTM final states.
-        # finals = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
-        # finals = finals.unsqueeze(1).expand(x.shape)
-        # x = torch.cat([x, finals], dim=2)
+        x2, hn2 = self.lstm2(x1, hn1)
+        x2 = self.dropout(x2)
+
+        x3, hn3 = self.lstm3(x2, hn2)
+        x3 = self.dropout(x3)
+
+        x = torch.cat([x1, x2, x3], 2)
 
         # Token positions.
         pos = torch.arange(0, x.shape[1]).type(ftype)
         pos = pos.expand(x.shape[0], x.shape[1]).unsqueeze(2)
         x = torch.cat([x, pos], dim=2)
-
-        # Attend over other hiddens.
-
-        x1 = (
-            x.unsqueeze(2)
-            .expand(x.shape[0], x.shape[1], x.shape[1], x.shape[2])
-            .contiguous()
-            .view(x.shape[0], -1, x.shape[2])
-        )
-
-        x2 = (
-            x.unsqueeze(2)
-            .expand(x.shape[0], x.shape[1], x.shape[1], x.shape[2])
-            .transpose(1, 2)
-            .contiguous()
-            .view(x.shape[0], -1, x.shape[2])
-        )
-
-        pairs = torch.cat([x1, x2], dim=2).view(-1, x.shape[2]*2)
-        scores = self.attend(pairs)
-        scores = scores.view(x.shape[0], x.shape[1], -1)
-        w = F.softmax(scores, 2)
-
-        attn = x.unsqueeze(1)
-        attn = attn.expand(x.shape[0], x.shape[1], x.shape[1], x.shape[2])
-        attn = attn * w.unsqueeze(3)
-        attn = attn.sum(2)
-        x = torch.cat([x, attn], dim=2)
 
         return self.embed(x)
 
