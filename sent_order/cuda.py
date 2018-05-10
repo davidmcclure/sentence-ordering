@@ -1,9 +1,13 @@
 
 
 import torch
+import os
 
 
-if torch.cuda.is_available():
+CUDA = os.environ.get('CUDA')
+
+
+if CUDA:
     itype = torch.cuda.LongTensor
     ftype = torch.cuda.FloatTensor
 
