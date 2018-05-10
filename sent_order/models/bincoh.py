@@ -4,6 +4,7 @@ import random
 import numpy as np
 
 from tqdm import tqdm
+from boltons.iterutils import chunked
 
 import torch
 from torch.nn import functional as F
@@ -64,27 +65,20 @@ class Classifier(nn.Module):
 
         return self.predict(x)
 
-    def train_batch(self, docs):
-        """Generate correct / random examples, predict.
+    def train_batch(self, pairs):
+        """Generate correct / reversed examples, predict.
 
         Returns: y pred, y true
         """
-        doc_sents = [
-            [[t.text for t in sent] for sent in doc.sents()]
-            for doc in docs
-        ]
-
         x, y = [], []
-        for sents in doc_sents:
+        for s1, s2 in pairs:
 
             # Correct.
-            x.append([t for s in sents for t in s])
+            x.append(s1 + s2)
             y.append(0)
 
-            shuffled_sents = sorted(sents, key=lambda x: random.random())
-
-            # Shuffled.
-            x.append([t for s in shuffled_sents for t in s])
+            # Reversed.
+            x.append(s2 + s1)
             y.append(1)
 
         y = torch.LongTensor(y).type(itype)
@@ -95,10 +89,9 @@ class Classifier(nn.Module):
 class Trainer:
 
     def __init__(self, train_path, dev_path, lr=1e-3, lstm_dim=500,
-        hidden_dim=200, batch_size=20, max_sents=50):
+        hidden_dim=200, batch_size=20):
 
         self.batch_size = batch_size
-        self.max_sents = max_sents
 
         self.train_corpus = Corpus.from_combined_file(train_path)
         self.dev_corpus = Corpus.from_combined_file(dev_path)
@@ -127,15 +120,16 @@ class Trainer:
 
         self.model.train()
 
-        batches = self.train_corpus.training_batches(
-            self.batch_size, self.max_sents)
+        pairs = self.train_corpus.sent_pairs()
+
+        batches = chunked(pairs, self.batch_size)
 
         epoch_loss = []
-        for docs in tqdm(batches):
+        for batch in tqdm(batches):
 
             self.optimizer.zero_grad()
 
-            yp, yt = self.model.train_batch(docs)
+            yp, yt = self.model.train_batch(batch)
 
             loss = F.nll_loss(yp, yt)
             loss.backward()

@@ -225,15 +225,9 @@ class Corpus:
 
         return vocab
 
-    def training_batches(self, size, max_sents):
-        """Generate batches.
+    def sent_pairs(self):
+        """Generate sentence pairs.
         """
-        # Truncate randomly.
-        docs = [d.truncate_sents_random(max_sents) for d in self.documents]
-
-        # Sort by length, chunk.
-        docs = sorted(docs, key=lambda d: len(d))
-        batches = chunked(docs, size)
-
-        # Shuffle lengths.
-        return sorted(batches, key=lambda x: random.random())
+        for doc in self.documents:
+            for s1, s2 in pairwise(doc.sents()):
+                yield [t.text for t in s1], [t.text for t in s2]
