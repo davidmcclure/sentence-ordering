@@ -284,6 +284,80 @@ class SentenceLSTM(Classifier):
         return self.predict(x)
 
 
+class SentenceLSTMAttn(Classifier):
+
+    def __init__(self, vocab, lstm_dim=500, hidden_dim=200):
+
+        super().__init__()
+
+        self.embeddings = WordEmbedding(vocab)
+
+        self.lstm = nn.LSTM(
+            self.embeddings.weight.shape[1],
+            lstm_dim,
+            bidirectional=True,
+            batch_first=True,
+        )
+
+        self.dropout = nn.Dropout()
+
+        self.attn = Attention(lstm_dim*2)
+
+        self.predict = nn.Sequential(
+            nn.Linear(lstm_dim*6, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 2),
+            nn.LogSoftmax(1),
+        )
+
+    def forward(self, pairs):
+        """Encode sentences separately, cat, predict.
+        """
+        sents = [sent for pair in pairs for sent in pair]
+
+        x, sizes = utils.pad_right_and_stack([
+            self.embeddings.tokens_to_idx(tokens)
+            for tokens in sents
+        ])
+
+        x = self.embeddings(x)
+        x = self.dropout(x)
+
+        x, reorder = utils.pack(x, sizes)
+
+        x, (hn, _) = self.lstm(x)
+        hn = self.dropout(hn)
+
+        # Cat forward + backward hidden layers.
+        hn = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
+        hn = hn[reorder]
+
+        # Regroup hiddens.
+        hn = torch.stack([
+            torch.cat([hn[i1], hn[i2]])
+            for i1, i2 in chunked(range(len(hn)), 2)
+        ])
+
+        # Unpack the raw LSTM states.
+        x, sizes = pad_packed_sequence(x, batch_first=True)
+        x = x[reorder]
+
+        # Regroup states.
+        x = torch.stack([
+            torch.cat([x[i1], x[i2]])
+            for i1, i2 in chunked(range(len(x)), 2)
+        ])
+
+        # Attend over combined LSTM hiddens for both sents.
+        attn = self.attn(x)
+
+        x = torch.cat([hn, attn], dim=1)
+
+        return self.predict(x)
+
+
 class Trainer:
 
     def __init__(self, model_cls, train_path, dev_path, lr=1e-4,
