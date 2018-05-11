@@ -89,6 +89,34 @@ class TokenLSTM(Classifier):
         return self.predict(x)
 
 
+class Attention(nn.Module):
+
+    def __init__(self, input_dim, hidden_dim=200):
+
+        super().__init__()
+
+        self.dropout = nn.Dropout()
+
+        self.attn = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1),
+        )
+
+    def forward(self, x):
+        """Attend over 3d tensor of (batch, seq, embed).
+        """
+        weights = self.attn(x.view(-1, x.shape[-1])).squeeze()
+        weights = weights.view(x.shape[0], x.shape[1])
+        weights = F.softmax(weights, dim=1)
+
+        attn = (x * weights.unsqueeze(2)).sum(1)
+
+        return attn
+
+
 class TokenLSTMAttn(Classifier):
 
     def __init__(self, vocab, lstm_dim=500, hidden_dim=200):
@@ -106,13 +134,7 @@ class TokenLSTMAttn(Classifier):
 
         self.dropout = nn.Dropout()
 
-        self.attn = nn.Sequential(
-            nn.Linear(lstm_dim*2, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, 1),
-        )
+        self.attn = Attention(lstm_dim*2)
 
         self.predict = nn.Sequential(
             nn.Linear(lstm_dim*4, hidden_dim),
@@ -147,10 +169,7 @@ class TokenLSTMAttn(Classifier):
         x, sizes = pad_packed_sequence(x, batch_first=True)
         x = x[reorder]
 
-        weights = self.attn(x.view(-1, x.shape[-1])).squeeze()
-        weights = weights.view(x.shape[0], x.shape[1])
-        weights = F.softmax(weights, dim=1)
-        attn = (x * weights.unsqueeze(2)).sum(1)
+        attn = self.attn(x)
 
         x = torch.cat([hn, attn], dim=1)
 
