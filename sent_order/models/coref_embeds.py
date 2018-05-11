@@ -452,7 +452,7 @@ class Trainer:
 
                 yp, yt = self.model.train_batch(docs)
 
-                weight = yt.sum(0).max() / yt.sum(0)
+                weight = (yt.sum(0).max() + 1) / (yt.sum(0).float() + 1)
 
                 loss = F.binary_cross_entropy(yp, yt, weight)
 
@@ -480,7 +480,7 @@ class Trainer:
 
                 yp, yt = self.model.train_batch(docs)
 
-                weight = yt.sum(0).max() / yt.sum(0)
+                weight = (yt.sum(0).max() + 1) / (yt.sum(0).float() + 1)
 
                 loss = F.binary_cross_entropy(yp, yt, weight)
 
