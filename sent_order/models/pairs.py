@@ -216,17 +216,12 @@ class TokenLSTMJustAttn(Classifier):
         x = self.dropout(x)
 
         x, reorder = utils.pack(x, sizes)
-
         x, (hn, _) = self.lstm(x)
-        hn = self.dropout(hn)
-
-        # Cat forward + backward hidden layers.
-        hn = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
-        hn = hn[reorder]
 
         # Unpack the raw LSTM states.
         x, sizes = pad_packed_sequence(x, batch_first=True)
         x = x[reorder]
+        x = self.dropout(x)
 
         x = self.attn(x)
 
