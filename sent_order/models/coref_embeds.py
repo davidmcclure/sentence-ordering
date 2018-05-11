@@ -452,7 +452,10 @@ class Trainer:
 
                 yp, yt = self.model.train_batch(docs)
 
-                loss = F.binary_cross_entropy(yp, yt)
+                weight = yt.sum(0).max() / yt.sum(0)
+
+                loss = F.binary_cross_entropy(yp, yt, weight)
+
                 loss.backward()
 
                 self.optimizer.step()
@@ -476,7 +479,11 @@ class Trainer:
             try:
 
                 yp, yt = self.model.train_batch(docs)
-                loss = F.binary_cross_entropy(yp, yt)
+
+                weight = yt.sum(0).max() / yt.sum(0)
+
+                loss = F.binary_cross_entropy(yp, yt, weight)
+
                 losses.append(loss.item())
 
             except RuntimeError as e:
