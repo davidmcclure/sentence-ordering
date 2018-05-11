@@ -376,7 +376,7 @@ class SentenceLSTMCorefEncoder(Classifier, CorefTransfer):
         lstm_dim = self.coref.encode_doc.lstm.hidden_size
 
         self.predict = nn.Sequential(
-            nn.Linear(lstm_dim*2, hidden_dim),
+            nn.Linear(lstm_dim*4, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -389,22 +389,7 @@ class SentenceLSTMCorefEncoder(Classifier, CorefTransfer):
         """
         sents = [sent for pair in pairs for sent in pair]
 
-        x, sizes = utils.pad_right_and_stack([
-            self.embeddings.tokens_to_idx(tokens)
-            for tokens in sents
-        ])
-
-        x = self.embeddings(x)
-        x = self.dropout(x)
-
-        x, reorder = utils.pack(x, sizes)
-
-        _, (hn, _) = self.coref.encode_doc(x)
-        hn = self.dropout(hn)
-
-        # Cat forward + backward hidden layers.
-        x = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
-        x = x[reorder]
+        x = self.coref.encode_doc.encode_batch(sents)
 
         x = torch.stack([
             torch.cat([x[i1], x[i2]])

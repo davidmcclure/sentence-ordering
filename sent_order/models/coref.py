@@ -83,6 +83,28 @@ class DocEncoder(nn.Module):
 
         return embeds.squeeze(), states.squeeze()
 
+    def encode_batch(self, docs):
+        """Encode a batch of documents. (For transfer models.)
+        """
+        x, sizes = utils.pad_right_and_stack([
+            self.embeddings.tokens_to_idx(tokens)
+            for tokens in docs
+        ])
+
+        x = self.embeddings(x)
+        x = self.dropout(x)
+
+        x, reorder = utils.pack(x, sizes)
+
+        _, (hn, _) = self.lstm(x)
+        hn = self.dropout(hn)
+
+        # Cat forward + backward hidden layers.
+        x = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
+        x = x[reorder]
+
+        return x
+
 
 class Scorer(nn.Module):
 
