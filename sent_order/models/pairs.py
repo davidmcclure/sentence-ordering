@@ -321,19 +321,14 @@ class Trainer:
         self.model.eval()
 
         pairs = self.dev_corpus.sent_pair_tokens()
+        
         batches = chunked(pairs, self.batch_size)
 
-        correct, total = 0, 0
+        correct = 0
         for batch in tqdm(batches):
-
-            yps, yts = self.model.train_batch(batch)
-
-            for yp, yt in zip(yps, yts):
-                if yp.argmax() == yt:
-                    correct += 1
-
-            total += len(yps)
+            yp, yt = self.model.train_batch(batch)
+            correct += (yp.argmax(1) == yt).sum(0).item()
 
         print(yps[:10], yts[:10])
 
-        return correct / total
+        return correct / len(pairs)
