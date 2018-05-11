@@ -68,13 +68,12 @@ class DocEncoder(nn.Module):
     def embed_dim(self):
         return self.embeddings.weight.shape[1]
 
-    def forward(self, docs):
+    def forward(self, tokens):
         """BiLSTM over document tokens.
         """
-        x = torch.stack([
-            self.embeddings.tokens_to_idx(tokens)
-            for tokens in docs
-        ])
+        # TODO: Char CNN.
+        x = self.embeddings.tokens_to_idx(tokens)
+        x = x.unsqueeze(0)
 
         embeds = self.embeddings(x)
         embeds = self.dropout(embeds)
@@ -82,7 +81,7 @@ class DocEncoder(nn.Module):
         states, _ = self.lstm(embeds)
         states = self.dropout(states)
 
-        return embeds, states
+        return embeds.squeeze(), states.squeeze()
 
 
 class Scorer(nn.Module):
@@ -318,10 +317,7 @@ class Coref(nn.Module):
         """Generate spans with yi / sij.
         """
         # LSTM over tokens.
-        embeds, states = self.encode_doc([doc.token_texts()])
-
-        embeds = embeds.squeeze()
-        states = states.squeeze()
+        embeds, states = self.encode_doc(doc.token_texts())
 
         spans = self.score_spans(doc, embeds, states)
         spans = prune_spans(spans, len(doc))
