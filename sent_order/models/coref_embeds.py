@@ -184,7 +184,7 @@ class Document:
         preds = []
         for t in self.tokens:
 
-            pred = torch.zeros(out_dim)
+            pred = torch.zeros(out_dim).type(itype)
 
             for cid in t.clusters:
                 pred_ix = self.coref_id_to_pred_index[cid]+1
