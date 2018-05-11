@@ -319,7 +319,7 @@ class WordEmbedding(nn.Embedding):
 class DocEmbedder(nn.Module):
 
     def __init__(self, vocab, lstm_dim=500, hidden_dim=200, out_dim=10,
-        lstm_num_layers=1):
+        lstm_num_layers=2):
 
         super().__init__()
 
@@ -409,7 +409,7 @@ class DocEmbedder(nn.Module):
 class Trainer:
 
     def __init__(self, train_path, dev_path, lr=1e-4,
-        batch_size=10, max_sents=20):
+        batch_size=10, max_sents=50):
 
         self.batch_size = batch_size
         self.max_sents = max_sents
