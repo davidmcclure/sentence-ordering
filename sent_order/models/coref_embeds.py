@@ -12,6 +12,7 @@ from boltons.iterutils import pairwise, chunked, windowed
 from tqdm import tqdm
 from cached_property import cached_property
 from glob import glob
+from collections import defaultdict
 
 import torch
 from torchtext.vocab import Vectors
@@ -142,6 +143,61 @@ class Document:
 
         return self.__class__(tokens)
 
+    @cached_property
+    def coref_id_to_index_range(self):
+        """Map coref id -> token indexes, grouped by mention.
+        """
+        id_idx = defaultdict(list)
+
+        for i, token in enumerate(self.tokens):
+            for cid in token.clusters:
+
+                spans = id_idx[cid]
+
+                if len(spans) and spans[-1][-1] == i-1:
+                    spans[-1].append(i)
+
+                else:
+                    spans.append([i])
+
+        return id_idx
+
+    @cached_property
+    def coref_id_to_i1i2(self):
+        """Map coref id -> (start, end) span indexes.
+        """
+        return {
+            cid: [(s[0], s[-1]) for s in spans]
+            for cid, spans in self.coref_id_to_index_range.items()
+        }
+
+    @cached_property
+    def coref_id_to_pred_index(self):
+        """Map CONLL tag id -> index, by order of appearance.
+        """
+        kv = sorted(self.coref_id_to_i1i2.items(), key=lambda x: (x[1][0]))
+        return {k: i for i, k in enumerate([k for k, _ in kv])}
+
+    def y_true(self, out_dim):
+        """Word -> ascending cluster id.
+        """
+        preds = []
+        for t in self.tokens:
+
+            pred = torch.zeros(out_dim)
+
+            for cid in t.clusters:
+                pred_ix = self.coref_id_to_pred_index[cid]+1
+                if pred_ix < out_dim:
+                    pred[pred_ix] = 1
+
+            if not t.clusters:
+                pred[0] = 1
+
+            preds.append(pred)
+
+        return torch.stack(preds)
+
 
 class GoldFile:
 
@@ -262,10 +318,12 @@ class WordEmbedding(nn.Embedding):
 
 class DocEmbedder(nn.Module):
 
-    def __init__(self, vocab, lstm_dim=500, hidden_dim=200, embed_dim=50,
+    def __init__(self, vocab, lstm_dim=500, hidden_dim=200, out_dim=10,
         lstm_num_layers=1):
 
         super().__init__()
+
+        self.out_dim = out_dim
 
         self.embeddings = WordEmbedding(vocab)
 
@@ -289,7 +347,8 @@ class DocEmbedder(nn.Module):
             nn.Tanh(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.Tanh(),
-            nn.Linear(hidden_dim, embed_dim),
+            nn.Linear(hidden_dim, out_dim),
+            nn.Sigmoid(),
         )
 
     @property
@@ -325,56 +384,26 @@ class DocEmbedder(nn.Module):
 
         return self.embed(x)
 
-    def embed_training_pairs(self, docs, skim=1000):
-        """Build (token1, token2, coref flag) pairs.
+    def train_batch(self, docs, out_dim=10):
+        """Predict token classes.
         """
         tokens = [d.token_texts() for d in docs]
 
-        embeds = self(tokens)
+        yps = self(tokens)
 
-        # Get positive / negative examples.
-        x1, x2, y = [], [], []
-        for doc, tokens in zip(docs, embeds):
+        yt, yp = [], []
+        for i, doc in enumerate(docs):
 
-            # Get indexes of tokens in / not in clusters.
-            cidx, eidx = [], []
-            for i, t in enumerate(doc.tokens):
-                if t.clusters:
-                    cidx.append(i)
-                else:
-                    eidx.append(i)
+            yti = doc.y_true(self.out_dim)
+            ypi = yps[i][:len(yti)]
 
-            # Clamp empty indexes to size of coref indexes.
-            if len(eidx) > len(cidx):
-                eidx = random.sample(eidx, len(cidx))
+            yt.append(yti)
+            yp.append(ypi)
 
-            whitelist = cidx + eidx
+        yp = torch.cat(yp, dim=0)
+        yt = torch.cat(yt, dim=0)
 
-            # Take pairs, select at most 1000 random.
-            pairs = list(combinations(whitelist, 2))
-            pairs = random.sample(pairs, min(skim, len(pairs)))
-
-            for i1, i2 in pairs:
-
-                c1 = doc.tokens[i1].clusters
-                c2 = doc.tokens[i2].clusters
-
-                # Connected if both have coref tag, or both empty.
-                coref = (bool(set.intersection(c1, c2)) or
-                    (not c1 and not c2))
-
-                x1.append(tokens[i1])
-                x2.append(tokens[i2])
-                y.append(1 if coref else -1)
-
-        if not x1:
-            raise RuntimeError('No coref clusters in batch.')
-
-        x1 = torch.stack(x1)
-        x2 = torch.stack(x2)
-        y = torch.FloatTensor(y).type(ftype)
-
-        return x1, x2, y
+        return yp, yt
 
 
 class Trainer:
@@ -421,9 +450,9 @@ class Trainer:
 
                 self.optimizer.zero_grad()
 
-                x1, x2, y = self.model.embed_training_pairs(docs)
+                yp, yt = self.model.train_batch(docs)
 
-                loss = F.cosine_embedding_loss(x1, x2, y)
+                loss = F.binary_cross_entropy(yp, yt)
                 loss.backward()
 
                 self.optimizer.step()
@@ -434,23 +463,23 @@ class Trainer:
                 print(e)
 
         print('Loss: %f' % np.mean(epoch_loss))
-        print('Dev loss: %f' % self.dev_loss())
-
-    def dev_loss(self):
-        """Get dev loss.
-        """
-        self.model.eval()
-
-        losses = []
-        for docs in tqdm(self.dev_batches):
-
-            try:
-
-                x1, x2, y = self.model.embed_training_pairs(docs)
-                loss = F.cosine_embedding_loss(x1, x2, y)
-                losses.append(loss.item())
-
-            except RuntimeError as e:
-                print(e)
-
-        return np.mean(losses)
+    #     print('Dev loss: %f' % self.dev_loss())
+    #
+    # def dev_loss(self):
+    #     """Get dev loss.
+    #     """
+    #     self.model.eval()
+    #
+    #     losses = []
+    #     for docs in tqdm(self.dev_batches):
+    #
+    #         try:
+    #
+    #             x1, x2, y = self.model.embed_training_pairs(docs)
+    #             loss = F.cosine_embedding_loss(x1, x2, y)
+    #             losses.append(loss.item())
+    #
+    #         except RuntimeError as e:
+    #             print(e)
+    #
+    #     return np.mean(losses)
