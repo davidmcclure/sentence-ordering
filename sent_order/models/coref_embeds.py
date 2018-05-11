@@ -463,23 +463,23 @@ class Trainer:
                 print(e)
 
         print('Loss: %f' % np.mean(epoch_loss))
-    #     print('Dev loss: %f' % self.dev_loss())
-    #
-    # def dev_loss(self):
-    #     """Get dev loss.
-    #     """
-    #     self.model.eval()
-    #
-    #     losses = []
-    #     for docs in tqdm(self.dev_batches):
-    #
-    #         try:
-    #
-    #             x1, x2, y = self.model.embed_training_pairs(docs)
-    #             loss = F.cosine_embedding_loss(x1, x2, y)
-    #             losses.append(loss.item())
-    #
-    #         except RuntimeError as e:
-    #             print(e)
-    #
-    #     return np.mean(losses)
+        print('Dev loss: %f' % self.dev_loss())
+
+    def dev_loss(self):
+        """Get dev loss.
+        """
+        self.model.eval()
+
+        losses = []
+        for docs in tqdm(self.dev_batches):
+
+            try:
+
+                yp, yt = self.model.train_batch(docs)
+                loss = F.binary_cross_entropy(yp, yt)
+                losses.append(loss.item())
+
+            except RuntimeError as e:
+                print(e)
+
+        return np.mean(losses)
