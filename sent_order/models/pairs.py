@@ -358,6 +358,62 @@ class SentenceLSTMAttn(Classifier):
         return self.predict(x)
 
 
+class CorefTransfer(nn.Module):
+
+    def __init__(self, path):
+        super().__init__()
+        loc = 'cuda:0' if CUDA else 'cpu'
+        self.coref = torch.load(path, map_location={'cpu': loc})
+        self.coref.requires_grad = False
+
+
+class SentenceLSTMCorefEncoder(Classifier, CorefTransfer):
+
+    def __init__(self, vocab, hidden_dim=200, *args, **kwargs):
+
+        super().__init__(*args, **kwargs)
+
+        lstm_dim = self.coref.encode_doc.lstm.hidden_size
+
+        self.predict = nn.Sequential(
+            nn.Linear(lstm_dim*2, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 2),
+            nn.LogSoftmax(1),
+        )
+
+    def forward(self, pairs):
+        """Encode sentences separately, cat, predict.
+        """
+        sents = [sent for pair in pairs for sent in pair]
+
+        x, sizes = utils.pad_right_and_stack([
+            self.embeddings.tokens_to_idx(tokens)
+            for tokens in sents
+        ])
+
+        x = self.embeddings(x)
+        x = self.dropout(x)
+
+        x, reorder = utils.pack(x, sizes)
+
+        _, (hn, _) = self.coref.encode_doc(x)
+        hn = self.dropout(hn)
+
+        # Cat forward + backward hidden layers.
+        x = torch.cat([hn[0,:,:], hn[1,:,:]], dim=1)
+        x = x[reorder]
+
+        x = torch.stack([
+            torch.cat([x[i1], x[i2]])
+            for i1, i2 in chunked(range(len(x)), 2)
+        ])
+
+        return self.predict(x)
+
+
 class Trainer:
 
     def __init__(self, model_cls, train_path, dev_path, lr=1e-4,
