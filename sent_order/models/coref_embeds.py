@@ -408,8 +408,8 @@ class DocEmbedder(nn.Module):
 
 class Trainer:
 
-    def __init__(self, train_path, dev_path, lr=1e-3,
-        batch_size=10, max_sents=5):
+    def __init__(self, train_path, dev_path, lr=1e-4,
+        batch_size=10, max_sents=20):
 
         self.batch_size = batch_size
         self.max_sents = max_sents
