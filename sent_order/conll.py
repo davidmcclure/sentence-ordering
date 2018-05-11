@@ -28,7 +28,7 @@ class Token:
 class Document:
 
     @classmethod
-    def from_text(cls, doc_slug, doc_part, text):
+    def from_text(cls, text, doc_slug='doc', doc_part=0):
         """Tokenize raw text input.
         """
         tokens = []
