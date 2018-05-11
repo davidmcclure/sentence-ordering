@@ -278,11 +278,12 @@ class Trainer:
 
         batches = chunked(pairs, self.batch_size)
 
-        correct = 0
+        correct, total = 0, 0
         for batch in tqdm(batches):
             yp, yt = self.model.train_batch(batch)
             correct += (yp.argmax(1) == yt).sum(0).item()
+            total += len(yp)
 
         print(yp[:10], yt[:10])
 
-        return correct / len(pairs)
+        return correct / total
