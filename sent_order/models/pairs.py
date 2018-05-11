@@ -293,7 +293,7 @@ class Trainer:
 
         self.model.train()
 
-        pairs = self.train_corpus.sent_pair_tokens()
+        pairs = list(self.train_corpus.sent_pair_tokens())
         random.shuffle(pairs)
 
         batches = chunked(pairs, self.batch_size)
