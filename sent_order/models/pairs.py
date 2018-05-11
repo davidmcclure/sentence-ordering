@@ -261,7 +261,7 @@ class SentenceLSTM(Classifier):
 
 class Trainer:
 
-    def __init__(self, model_cls, train_path, dev_path, lr=1e-3,
+    def __init__(self, model_cls, train_path, dev_path, lr=1e-4,
         batch_size=20, *args, **kwargs):
 
         self.batch_size = batch_size
