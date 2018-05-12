@@ -1,4 +1,4 @@
 
-# Sentence ordering
+# CS287
 
-Put sentences in order.
+Coreference resolution.
